@@ -52,6 +52,7 @@ func HandleGetAmDataRequest(request *httpwrapper.Request) *httpwrapper.Response 
 func getAmDataProcedure(supi string, plmnID string, supportedFeatures string) (
 	response *models.AccessAndMobilitySubscriptionData, problemDetails *models.ProblemDetails,
 ) {
+	logger.SdmLog.Infof("** Handle GetAmDataProcedure **")
 	var queryAmDataParamOpts Nudr.QueryAmDataParamOpts
 	queryAmDataParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
 
