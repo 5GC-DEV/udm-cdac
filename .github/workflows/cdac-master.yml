@@ -17,6 +17,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +34,7 @@ jobs:
   hadolint:
     name: hadolint
     runs-on: ubuntu-latest
-
+    if: github.repository_owner == '5GC-DEV'
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +49,7 @@ jobs:
 
   license-check:
     runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
     steps:
       - uses: actions/checkout@v4
 
@@ -56,6 +58,7 @@ jobs:
 
   fossa-check:
     runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
     steps:
       - uses: actions/checkout@v4
 
@@ -66,6 +69,7 @@ jobs:
 
   unit-tests:
     runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
     steps:
       - uses: actions/checkout@v4
 
@@ -78,7 +82,7 @@ jobs:
   docker-build-push-images:
     runs-on: ubuntu-latest
     needs: unit-tests
-    
+    if: github.repository_owner == '5GC-DEV'
     env:
       REGISTRY: docker.io
       DOCKER_REGISTRY: docker.io/
