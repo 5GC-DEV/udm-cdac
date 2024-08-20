@@ -1,41 +1,22 @@
-
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2023 Canonical Ltd.
 # Copyright 2024 Intel Corporation
 
-name: Master workflow
+name: IOSMCN Master workflow
 
 on:
   pull_request:
     branches:
-      - master
+      - iosmcnmaster
   push:
     branches:
-      - master
+      - iosmcnmaster
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Build
-        run: go build
-
-  docker-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: make docker-build
 
   lint:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'ios-mcn-core'
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +33,7 @@ jobs:
   hadolint:
     name: hadolint
     runs-on: ubuntu-latest
-
+    if: github.repository_owner == 'ios-mcn-core'
     steps:
       - uses: actions/checkout@v4
 
@@ -67,6 +48,7 @@ jobs:
 
   license-check:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'ios-mcn-core'
     steps:
       - uses: actions/checkout@v4
 
@@ -75,6 +57,7 @@ jobs:
 
   fossa-check:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'ios-mcn-core'
     steps:
       - uses: actions/checkout@v4
 
@@ -85,6 +68,7 @@ jobs:
 
   unit-tests:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'ios-mcn-core'
     steps:
       - uses: actions/checkout@v4
 
@@ -94,3 +78,40 @@ jobs:
 
       - name: Unit tests
         run: go test ./...
+  docker-build-push-images:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'ios-mcn-core'
+    needs: unit-tests
+    
+    env:
+      REGISTRY: ghcr.io
+      DOCKER_REGISTRY: ghcr.io/
+      DOCKER_REPOSITORY: ios-mcn-core/
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - run: echo GIT_SHA_SHORT=$(git rev-parse --short HEAD) >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.GHCRUSER }}
+          password: ${{ secrets.GHCRPASS }}
+
+      - name: Build and push "master-latest" Docker image
+        env:
+          DOCKER_TAG: master-latest
+        run: |
+          make docker-build
+          make docker-push
+
+      - name: Build and push "master-GIT_SHA" Docker image
+        env:
+          DOCKER_TAG: master-${{ env.GIT_SHA_SHORT }}
+        run: |
+          make docker-build
+          make docker-push
