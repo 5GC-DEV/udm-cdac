@@ -18,8 +18,6 @@ import (
 
 	"github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
-	"github.com/omec-project/http2_util"
-	"github.com/omec-project/logger_util"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/consumer"
 	"github.com/omec-project/udm/context"
@@ -27,11 +25,14 @@ import (
 	"github.com/omec-project/udm/factory"
 	"github.com/omec-project/udm/httpcallback"
 	"github.com/omec-project/udm/logger"
+	"github.com/omec-project/udm/metrics"
 	"github.com/omec-project/udm/parameterprovision"
 	"github.com/omec-project/udm/subscriberdatamanagement"
 	"github.com/omec-project/udm/ueauthentication"
 	"github.com/omec-project/udm/uecontextmanagement"
 	"github.com/omec-project/udm/util"
+	"github.com/omec-project/util/http2_util"
+	logger_util "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 	pathUtilLogger "github.com/omec-project/util/path_util/logger"
 	"github.com/sirupsen/logrus"
@@ -190,6 +191,8 @@ func (udm *UDM) Start() {
 	ueauthentication.AddService(router)
 	uecontextmanagement.AddService(router)
 
+	go metrics.InitMetrics()
+
 	udmLogPath := path_util.Free5gcPath("omec-project/udmsslkey.log")
 	udmPemPath := path_util.Free5gcPath("free5gc/support/TLS/udm.pem")
 	udmKeyPath := path_util.Free5gcPath("free5gc/support/TLS/udm.key")
@@ -320,7 +323,7 @@ func (udm *UDM) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool
 							break
 						}
 					}
-					if found == false {
+					if !found {
 						self.PlmnList = append(self.PlmnList, temp)
 						logger.GrpcLog.Infoln("Plmn added in the context", self.PlmnList)
 					}
@@ -329,7 +332,7 @@ func (udm *UDM) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool
 				}
 			}
 		}
-		if minConfig == false {
+		if !minConfig {
 			// first slice Created
 			if len(self.PlmnList) > 0 {
 				minConfig = true
@@ -379,7 +382,7 @@ func (udm *UDM) BuildAndSendRegisterNFInstance() (models.NfProfile, error) {
 		return profile, err
 	}
 	initLog.Infof("UDM Profile Registering to NRF: %v", profile)
-	//Indefinite attempt to register until success
+	// Indefinite attempt to register until success
 	profile, _, self.NfId, err = consumer.SendRegisterNFInstance(self.NrfUri, self.NfId, profile)
 	return profile, err
 }
