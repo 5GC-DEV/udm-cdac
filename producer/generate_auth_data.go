@@ -159,6 +159,8 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	response *models.AuthenticationInfoResult, problemDetails *models.ProblemDetails,
 ) {
 	logger.UeauLog.Traceln("In GenerateAuthDataProcedure")
+	logger.UeauLog.Info("---In GenerateAuthDataProcedure")
+	logger.UeauLog.Info("---AusfInstanceId:", authInfoRequest.AusfInstanceId)
 
 	response = &models.AuthenticationInfoResult{}
 	supi, err := suci.ToSupi(supiOrSuci, udm_context.UDM_Self().SuciProfiles)
@@ -180,6 +182,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 		return nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)
+	logger.UeauLog.Info("---authSubs.SequenceNumber:", authSubs.SequenceNumber)
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusForbidden,
