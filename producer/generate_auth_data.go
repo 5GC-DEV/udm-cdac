@@ -405,9 +405,12 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 
 			bigP := big.NewInt(SqnMAx)
 			bigSQN = bigInc.Add(bigSQN, bigInc)
+			fmt.Printf("*** bigSQN after add *** %s\n", bigSQN)
 			bigSQN = bigSQN.Mod(bigSQN, bigP)
+			fmt.Printf("*** bigSQN after mod *** %s\n", bigSQN)
 			sqnStr = fmt.Sprintf("%x", bigSQN)
 			sqnStr = strictHex(sqnStr, 12)
+			fmt.Printf("*** sqnStr *** %s\n", sqnStr)
 		} else {
 			logger.UeauLog.Errorln("Re-Sync MAC failed ", supi)
 			logger.UeauLog.Errorln("MACS ", macS)
