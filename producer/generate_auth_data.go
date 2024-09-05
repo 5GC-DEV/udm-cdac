@@ -161,7 +161,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	logger.UeauLog.Traceln("In GenerateAuthDataProcedure")
 	logger.UeauLog.Info("---In GenerateAuthDataProcedure")
 	logger.UeauLog.Info("---AusfInstanceId:", authInfoRequest.AusfInstanceId)
-
+	logger.UeauLog.Info("---supiorsuci: ", supiOrSuci)
 	response = &models.AuthenticationInfoResult{}
 	supi, err := suci.ToSupi(supiOrSuci, udm_context.UDM_Self().SuciProfiles)
 	if err != nil {
