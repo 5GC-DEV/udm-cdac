@@ -308,9 +308,10 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 			return nil, problemDetails
 		}
 	}
-
+	logger.UeauLog.Info("---:", authSubs.SequenceNumber)
 	sqnStr := strictHex(authSubs.SequenceNumber, 12)
 	logger.UeauLog.Traceln("sqnStr", sqnStr)
+	logger.UeauLog.Info("sqnStr", sqnStr)
 	sqn, err := hex.DecodeString(sqnStr)
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
@@ -324,6 +325,8 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	logger.UeauLog.Traceln("sqn", sqn)
+	logger.UeauLog.Info("sqn", sqn)
+
 	// fmt.Printf("K=%x\nsqn=%x\nOP=%x\nOPC=%x\n", K, sqn, OP, OPC)
 
 	RAND := make([]byte, 16)
@@ -426,6 +429,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 
 	// increment sqn
 	bigSQN := big.NewInt(0)
+	logger.UeauLog.Info("---bigSQN:", bigSQN)
 	sqn, err = hex.DecodeString(sqnStr)
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
