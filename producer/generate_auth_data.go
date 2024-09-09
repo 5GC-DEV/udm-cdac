@@ -176,6 +176,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	logger.UeauLog.Tracef("supi conversion => %s\n", supi)
+	logger.UeauLog.Infof("supi conversion => %s\n", supi)
 
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
@@ -252,7 +253,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 					hasOP = true
 				}
 			} else {
-				logger.UeauLog.Errorln("opStr length is ", len(opStr))
+				logger.UeauLog.Errorln("length is ", len(opStr))
 			}
 		} else {
 			logger.UeauLog.Infoln("Nil Op")
