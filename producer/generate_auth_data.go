@@ -330,6 +330,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	// fmt.Printf("K=%x\nsqn=%x\nOP=%x\nOPC=%x\n", K, sqn, OP, OPC)
 
 	RAND := make([]byte, 16)
+	logger.UeauLog.Info("---RAND:", RAND)
 	_, err = rand.Read(RAND)
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
@@ -343,6 +344,8 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	AMF, err := hex.DecodeString("8000")
+	logger.UeauLog.Info("---AMF:", AMF)
+
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusForbidden,
@@ -431,6 +434,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	bigSQN := big.NewInt(0)
 	logger.UeauLog.Info("---bigSQN:", bigSQN)
 	sqn, err = hex.DecodeString(sqnStr)
+	logger.UeauLog.Info("---sqn after decoding sqnstr:", sqn)
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusForbidden,
@@ -443,12 +447,18 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	bigSQN.SetString(sqnStr, 16)
+	logger.UeauLog.Info("---bigSQN after setstring of sqnstr:", bigSQN)
 
 	bigInc := big.NewInt(1)
+	logger.UeauLog.Info("---bigInc:", bigInc)
 	bigSQN = bigInc.Add(bigSQN, bigInc)
+	logger.UeauLog.Info("---bigSQN after adding bigsqn and biginc :", bigSQN)
 
 	SQNheStr := fmt.Sprintf("%x", bigSQN)
+	logger.UeauLog.Info("---SQNheStr:", SQNheStr)
 	SQNheStr = strictHex(SQNheStr, 12)
+	logger.UeauLog.Info("---SQNheStr after stricthex:", SQNheStr)
+
 	patchItemArray := []models.PatchItem{
 		{
 			Op:    models.PatchOperation_REPLACE,
@@ -479,8 +489,12 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	// Run milenage
 	macA, macS := make([]byte, 8), make([]byte, 8)
 	CK, IK := make([]byte, 16), make([]byte, 16)
+	logger.UeauLog.Info("---CK:", CK)
+	logger.UeauLog.Info("---IK:", IK)
+
 	RES := make([]byte, 8)
 	AK, AKstar := make([]byte, 6), make([]byte, 6)
+	logger.UeauLog.Info("---AK:", AK)
 
 	// Generate macA, macS
 	err = milenage.F1(opc, k, RAND, sqn, AMF, macA, macS)
@@ -500,9 +514,12 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	// fmt.Printf("SQN=%x\nAK =%x\n", SQN, AK)
 	// fmt.Printf("AMF=%x, macA=%x\n", AMF, macA)
 	SQNxorAK := make([]byte, 6)
+	logger.UeauLog.Info("---SQNxorAK:", SQNxorAK)
 	for i := 0; i < len(sqn); i++ {
 		SQNxorAK[i] = sqn[i] ^ AK[i]
 	}
+	logger.UeauLog.Info("---SQNxorAK:", SQNxorAK)
+
 	// fmt.Printf("SQN xor AK = %x\n", SQNxorAK)
 	AUTN := append(append(SQNxorAK, AMF...), macA...)
 	fmt.Printf("AUTN = %x\n", AUTN)
