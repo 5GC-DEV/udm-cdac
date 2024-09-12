@@ -309,10 +309,10 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 			return nil, problemDetails
 		}
 	}
-	logger.UeauLog.Info("---:", authSubs.SequenceNumber)
+	logger.UeauLog.Info("---sequence number:", authSubs.SequenceNumber)
 	sqnStr := strictHex(authSubs.SequenceNumber, 12)
 	logger.UeauLog.Traceln("sqnStr", sqnStr)
-	logger.UeauLog.Info("sqnStr", sqnStr)
+	logger.UeauLog.Info("sqnStr: ", sqnStr)
 	sqn, err := hex.DecodeString(sqnStr)
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
@@ -392,6 +392,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 		}
 
 		SQNms, macS := aucSQN(opc, k, Auts, randHex)
+		logger.UeauLog.Info("---**SQNms: ", SQNms)
 		if reflect.DeepEqual(macS, Auts[6:]) {
 			_, err = rand.Read(RAND)
 			if err != nil {
@@ -405,9 +406,11 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 				return nil, problemDetails
 			}
 
-			// increment sqn authSubs.SequenceNumber
+			// increment sqn
 			bigSQN := big.NewInt(0)
+			logger.UeauLog.Info("---**sqnstr before encode to string: ", sqnStr)
 			sqnStr = hex.EncodeToString(SQNms)
+			logger.UeauLog.Info("---**sqnstr in resync after encodetostring of sqnms: ", sqnStr)
 			fmt.Printf("SQNstr %s\n", sqnStr)
 			bigSQN.SetString(sqnStr, 16)
 
@@ -417,7 +420,9 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 			bigSQN = bigInc.Add(bigSQN, bigInc)
 			bigSQN = bigSQN.Mod(bigSQN, bigP)
 			sqnStr = fmt.Sprintf("%x", bigSQN)
+			logger.UeauLog.Info("---**sqnstr resync before stricthex: ", sqnStr)
 			sqnStr = strictHex(sqnStr, 12)
+			logger.UeauLog.Info("---**sqnStr resync after stricthex: ", sqnStr)
 		} else {
 			logger.UeauLog.Errorln("Re-Sync MAC failed ", supi)
 			logger.UeauLog.Errorln("MACS ", macS)
@@ -434,6 +439,9 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	// increment sqn
 	bigSQN := big.NewInt(0)
 	logger.UeauLog.Info("---bigSQN:", bigSQN)
+	logger.UeauLog.Info("---**sqnstr: ", sqnStr)
+	logger.UeauLog.Info("---**sqn: ", sqn)
+
 	sqn, err = hex.DecodeString(sqnStr)
 	logger.UeauLog.Info("---sqn after decoding sqnstr:", sqn)
 	if err != nil {
