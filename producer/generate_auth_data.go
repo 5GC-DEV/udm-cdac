@@ -184,6 +184,11 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)
 	logger.UeauLog.Info("---authSubs.SequenceNumber:", authSubs.SequenceNumber)
+	// converting seqno from string to hex
+	seqno := authSubs.SequenceNumber
+	hexseqno := fmt.Sprintf("%x", seqno)
+	logger.UeauLog.Info("---after converting string seqno to hex: ", hexseqno)
+	//
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
 			Status: http.StatusForbidden,
@@ -310,6 +315,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 		}
 	}
 	logger.UeauLog.Info("---sequence number:", authSubs.SequenceNumber)
+	// implement code of converting sqn number to int
 	sqnStr := strictHex(authSubs.SequenceNumber, 12)
 	logger.UeauLog.Traceln("sqnStr", sqnStr)
 	logger.UeauLog.Info("sqnStr: ", sqnStr)
