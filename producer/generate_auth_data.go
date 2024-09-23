@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/antihax/optional"
@@ -184,10 +185,14 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)
 	logger.UeauLog.Info("---authSubs.SequenceNumber:", authSubs.SequenceNumber)
-	// converting seqno from string to hex
+	// converting seqno from string to uint32
 	seqno := authSubs.SequenceNumber
-	hexseqno := fmt.Sprintf("%x", seqno)
-	logger.UeauLog.Info("---after converting string seqno to hex: ", hexseqno)
+	uintofseqno, err := strconv.ParseUint(seqno, 10, 32)
+	if err != nil {
+		logger.UeauLog.Info("error:", err)
+		return
+	}
+	logger.UeauLog.Info("---uint32 of seqno is: ", uint32(uintofseqno))
 	//
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
