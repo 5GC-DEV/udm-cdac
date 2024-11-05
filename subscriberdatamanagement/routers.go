@@ -21,7 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/omec-project/udm/logger"
-	logger_util "github.com/omec-project/util/logger"
+	utilLogger "github.com/omec-project/util/logger"
 )
 
 // Route is the information for every URI.
@@ -41,7 +41,7 @@ type Routes []Route
 
 // NewRouter returns a new router.
 func NewRouter() *gin.Engine {
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
+	router := utilLogger.NewGinWithZap(logger.GinLog)
 	AddService(router)
 	return router
 }
@@ -173,29 +173,6 @@ var routes = Routes{
 	},
 }
 
-var specialRouter = Routes{
-	{
-		"GetIdTranslationResult",
-		strings.ToUpper("Get"),
-		"/:gpsi/id-translation-result",
-		HTTPGetIdTranslationResult,
-	},
-
-	{
-		"UnsubscribeForSharedData",
-		strings.ToUpper("Delete"),
-		"/shared-data-subscriptions/:subscriptionId",
-		HTTPUnsubscribeForSharedData,
-	},
-
-	{
-		"ModifyForSharedData",
-		strings.ToUpper("Patch"),
-		"/shared-data-subscriptions/:subscriptionId",
-		HTTPModifyForSharedData,
-	},
-}
-
 var oneLayerPathRouter = Routes{
 	{
 		"GetSupi",
@@ -288,163 +265,5 @@ var twoLayerPathRouter = Routes{
 		strings.ToUpper("Get"),
 		"/:supi/ue-context-in-smsf-data",
 		HTTPGetUeContextInSmsfData,
-	},
-}
-
-var threeLayerPathRouter = Routes{
-	{
-		"Unsubscribe",
-		strings.ToUpper("Delete"),
-		"/:supi/sdm-subscriptions/:subscriptionId",
-		HTTPUnsubscribe,
-	},
-
-	{
-		"Info",
-		strings.ToUpper("Put"),
-		"/:supi/am-data/sor-ack",
-		HTTPInfo,
-	},
-
-	{
-		"PutUpuAck",
-		strings.ToUpper("Put"),
-		"/:supi/am-data/upu-ack",
-		HTTPPutUpuAck,
-	},
-
-	{
-		"Modify",
-		strings.ToUpper("Patch"),
-		"/:supi/sdm-subscriptions/:subscriptionId",
-		HTTPModify,
-	},
-}
-
-var routesBackup = Routes{
-	{
-		"Index",
-		"GET",
-		"/",
-		Index,
-	},
-
-	{
-		"GetAmData",
-		strings.ToUpper("Get"),
-		"/:supi/am-data",
-		HTTPGetAmData,
-	},
-
-	{
-		"Info",
-		strings.ToUpper("Put"),
-		"/:supi/am-data/sor-ack",
-		HTTPInfo,
-	},
-
-	{
-		"GetSupi",
-		strings.ToUpper("Get"),
-		"/:supi",
-		HTTPGetSupi,
-	},
-
-	{
-		"GetSharedData",
-		strings.ToUpper("Get"),
-		"/shared-data",
-		HTTPGetSharedData,
-	},
-
-	{
-		"GetSmfSelectData",
-		strings.ToUpper("Get"),
-		"/:supi/smf-select-data",
-		HTTPGetSmfSelectData,
-	},
-
-	{
-		"GetSmsMngData",
-		strings.ToUpper("Get"),
-		"/:supi/sms-mng-data",
-		HTTPGetSmsMngData,
-	},
-
-	{
-		"GetSmsData",
-		strings.ToUpper("Get"),
-		"/:supi/sms-data",
-		HTTPGetSmsData,
-	},
-
-	{
-		"GetSmData",
-		strings.ToUpper("Get"),
-		"/:supi/sm-data",
-		HTTPGetSmData,
-	},
-
-	{
-		"GetNssai",
-		strings.ToUpper("Get"),
-		"/:supi/nssai",
-		HTTPGetNssai,
-	},
-
-	{
-		"Subscribe",
-		strings.ToUpper("Post"),
-		"/:supi/sdm-subscriptions",
-		HTTPSubscribe,
-	},
-
-	{
-		"SubscribeToSharedData",
-		strings.ToUpper("Post"),
-		"/shared-data-subscriptions",
-		HTTPSubscribeToSharedData,
-	},
-
-	{
-		"Unsubscribe",
-		strings.ToUpper("Delete"),
-		"/:supi/sdm-subscriptions/:subscriptionId",
-		HTTPUnsubscribe,
-	},
-
-	{
-		"UnsubscribeForSharedData",
-		strings.ToUpper("Delete"),
-		"/shared-data-subscriptions/:subscriptionId",
-		HTTPUnsubscribeForSharedData,
-	},
-
-	{
-		"GetTraceData",
-		strings.ToUpper("Get"),
-		"/:supi/trace-data",
-		HTTPGetTraceData,
-	},
-
-	{
-		"GetUeContextInSmfData",
-		strings.ToUpper("Get"),
-		"/:supi/ue-context-in-smf-data",
-		HTTPGetUeContextInSmfData,
-	},
-
-	{
-		"GetUeContextInSmsfData",
-		strings.ToUpper("Get"),
-		"/:supi/ue-context-in-smsf-data",
-		HTTPGetUeContextInSmsfData,
-	},
-
-	{
-		"GetIdTranslationResult",
-		strings.ToUpper("Get"),
-		"/:gpsi/id-translation-result",
-		HTTPGetIdTranslationResult,
 	},
 }

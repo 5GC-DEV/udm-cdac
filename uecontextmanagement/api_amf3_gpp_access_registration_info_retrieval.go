@@ -19,7 +19,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	// "fmt"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/logger"
@@ -47,5 +46,4 @@ func HTTPGetAmf3gppAccess(c *gin.Context) {
 	} else {
 		c.Data(rsp.Status, "application/json", responseBody)
 	}
-	return
 }

@@ -1,24 +1,18 @@
-// Copyright 2019 free5GC.org
-//
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2019 free5GC.org
+// SPDX-FileCopyrightText: 2024 Canonical Ltd.
 //
 
-package httpcallback
+package subscribecallback
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/udm/logger"
-	utilLogger "github.com/omec-project/util/logger"
-	"go.uber.org/zap"
+	loggerUtil "github.com/omec-project/util/logger"
 )
-
-var HttpLog *zap.SugaredLogger
-
-func init() {
-	HttpLog = logger.HttpLog
-}
 
 // Route is the information for every URI.
 type Route struct {
@@ -26,7 +20,7 @@ type Route struct {
 	HandlerFunc gin.HandlerFunc
 	// Name is the name of this Route.
 	Name string
-	// Method is the string for the HTTP method. ex) GET, POST etc..
+	// Method is the string for the HTTP method ex: GET, POST etc.
 	Method string
 	// Pattern is the pattern of the URI.
 	Pattern string
@@ -35,15 +29,15 @@ type Route struct {
 // Routes is the list of the generated Route.
 type Routes []Route
 
-// NewRouter returns a new router
+// NewRouter returns a new router.
 func NewRouter() *gin.Engine {
-	router := utilLogger.NewGinWithZap(logger.GinLog)
+	router := loggerUtil.NewGinWithZap(logger.GinLog)
 	AddService(router)
 	return router
 }
 
 func AddService(engine *gin.Engine) *gin.RouterGroup {
-	group := engine.Group("")
+	group := engine.Group("/nudm-callback/v1")
 
 	for _, route := range routes {
 		switch route.Method {
@@ -69,11 +63,9 @@ func Index(c *gin.Context) {
 
 var routes = Routes{
 	{
-		Name: "Index", Method: "GET",
-		Pattern: "/", HandlerFunc: Index,
-	},
-	{
-		Name: "DataChangeNotificationToNF", Method: "POST",
-		Pattern: "/sdm-subscriptions", HandlerFunc: HTTPDataChangeNotificationToNF,
+		HTTPNfSubscriptionStatusNotify,
+		"NfStatusNotify",
+		strings.ToUpper("Post"),
+		"/nf-status-notify",
 	},
 }

@@ -17,7 +17,7 @@ import (
 	"github.com/omec-project/openapi/Nudr_DataRepository"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/consumer"
-	udm_context "github.com/omec-project/udm/context"
+	udmContext "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/producer/callback"
 	"github.com/omec-project/udm/util"
@@ -28,7 +28,7 @@ func createUDMClientToUDR(id string) (*Nudr_DataRepository.APIClient, error) {
 	uri := getUdrURI(id)
 	if uri == "" {
 		logger.Handlelog.Errorf("ID[%s] does not match any UDR", id)
-		return nil, fmt.Errorf("No UDR URI found")
+		return nil, fmt.Errorf("no UDR URI found")
 	}
 	cfg := Nudr_DataRepository.NewConfiguration()
 	cfg.SetBasePath(uri)
@@ -38,25 +38,25 @@ func createUDMClientToUDR(id string) (*Nudr_DataRepository.APIClient, error) {
 
 func getUdrURI(id string) string {
 	if strings.Contains(id, "imsi") || strings.Contains(id, "nai") { // supi
-		ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(id)
+		ue, ok := udmContext.UDM_Self().UdmUeFindBySupi(id)
 		if ok {
-			ue.UdrUri = consumer.SendNFIntancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
+			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
 			return ue.UdrUri
 		} else {
-			ue = udm_context.UDM_Self().NewUdmUe(id)
-			ue.UdrUri = consumer.SendNFIntancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
+			ue = udmContext.UDM_Self().NewUdmUe(id)
+			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
 			return ue.UdrUri
 		}
 	} else if strings.Contains(id, "pei") {
 		var udrURI string
-		udm_context.UDM_Self().UdmUePool.Range(func(key, value interface{}) bool {
-			ue := value.(*udm_context.UdmUeContext)
+		udmContext.UDM_Self().UdmUePool.Range(func(key, value interface{}) bool {
+			ue := value.(*udmContext.UdmUeContext)
 			if ue.Amf3GppAccessRegistration != nil && ue.Amf3GppAccessRegistration.Pei == id {
-				ue.UdrUri = consumer.SendNFIntancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
+				ue.UdrUri = consumer.SendNFInstancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
 				udrURI = ue.UdrUri
 				return false
 			} else if ue.AmfNon3GppAccessRegistration != nil && ue.AmfNon3GppAccessRegistration.Pei == id {
-				ue.UdrUri = consumer.SendNFIntancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
+				ue.UdrUri = consumer.SendNFInstancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
 				udrURI = ue.UdrUri
 				return false
 			}
@@ -65,26 +65,19 @@ func getUdrURI(id string) string {
 		return udrURI
 	} else if strings.Contains(id, "extgroupid") {
 		// extra group id
-		return consumer.SendNFIntancesUDR(id, consumer.NFDiscoveryToUDRParamExtGroupId)
+		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamExtGroupId)
 	} else if strings.Contains(id, "msisdn") || strings.Contains(id, "extid") {
 		// gpsi
-		return consumer.SendNFIntancesUDR(id, consumer.NFDiscoveryToUDRParamGpsi)
+		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamGpsi)
 	}
-	return consumer.SendNFIntancesUDR("", consumer.NFDiscoveryToUDRParamNone)
+	return consumer.SendNFInstancesUDR("", consumer.NFDiscoveryToUDRParamNone)
 }
 
 func HandleGetAmf3gppAccessRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
 	logger.UecmLog.Infof("Handle HandleGetAmf3gppAccessRequest")
-
-	// step 2: retrieve request
 	ueID := request.Params["ueId"]
 	supportedFeatures := request.Query.Get("supported-features")
-
-	// step 3: handle the message
 	response, problemDetails := GetAmf3gppAccessProcedure(ueID, supportedFeatures)
-
-	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
@@ -129,19 +122,12 @@ func GetAmf3gppAccessProcedure(ueID string, supportedFeatures string) (
 }
 
 func HandleGetAmfNon3gppAccessRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
-	logger.UecmLog.Infoln("Handle GetAmfNon3gppAccessRequest")
-
-	// step 2: retrieve request
+	logger.UecmLog.Infoln("handle GetAmfNon3gppAccessRequest")
 	ueId := request.Params["ueId"]
 	supportedFeatures := request.Query.Get("supported-features")
-
 	var queryAmfContextNon3gppParamOpts Nudr_DataRepository.QueryAmfContextNon3gppParamOpts
 	queryAmfContextNon3gppParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
-	// step 3: handle the message
 	response, problemDetails := GetAmfNon3gppAccessProcedure(queryAmfContextNon3gppParamOpts, ueId)
-
-	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
@@ -184,18 +170,11 @@ func GetAmfNon3gppAccessProcedure(queryAmfContextNon3gppParamOpts Nudr_DataRepos
 }
 
 func HandleRegistrationAmf3gppAccessRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
-	logger.UecmLog.Infof("Handle RegistrationAmf3gppAccess")
-
-	// step 2: retrieve request
+	logger.UecmLog.Infoln("handle RegistrationAmf3gppAccess")
 	registerRequest := request.Body.(models.Amf3GppAccessRegistration)
 	ueID := request.Params["ueId"]
 	logger.UecmLog.Info("UEID: ", ueID)
-
-	// step 3: handle the message
 	header, response, problemDetails := RegistrationAmf3gppAccessProcedure(registerRequest, ueID)
-
-	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
@@ -206,18 +185,18 @@ func HandleRegistrationAmf3gppAccessRequest(request *httpwrapper.Request) *httpw
 	}
 }
 
-// TS 29.503 5.3.2.2.2
+// RegistrationAmf3gppAccessProcedure TS 29.503 5.3.2.2.2
 func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegistration, ueID string) (
 	header http.Header, response *models.Amf3GppAccessRegistration, problemDetails *models.ProblemDetails,
 ) {
 	// TODO: EPS interworking with N26 is not supported yet in this stage
 	var oldAmf3GppAccessRegContext *models.Amf3GppAccessRegistration
-	if udm_context.UDM_Self().UdmAmf3gppRegContextExists(ueID) {
-		ue, _ := udm_context.UDM_Self().UdmUeFindBySupi(ueID)
+	if udmContext.UDM_Self().UdmAmf3gppRegContextExists(ueID) {
+		ue, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 		oldAmf3GppAccessRegContext = ue.Amf3GppAccessRegistration
 	}
 
-	udm_context.UDM_Self().CreateAmf3gppRegContext(ueID, registerRequest)
+	udmContext.UDM_Self().CreateAmf3gppRegContext(ueID, registerRequest)
 
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
@@ -257,25 +236,18 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 		return nil, nil, nil
 	} else {
 		header = make(http.Header)
-		udmUe, _ := udm_context.UDM_Self().UdmUeFindBySupi(ueID)
-		header.Set("Location", udmUe.GetLocationURI(udm_context.LocationUriAmf3GppAccessRegistration))
+		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
+		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriAmf3GppAccessRegistration))
 		return header, &registerRequest, nil
 	}
 }
 
-// TS 29.503 5.3.2.2.3
+// HandleRegisterAmfNon3gppAccessRequest TS 29.503 5.3.2.2.3
 func HandleRegisterAmfNon3gppAccessRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
-	logger.UecmLog.Infof("Handle RegisterAmfNon3gppAccessRequest")
-
-	// step 2: retrieve request
+	logger.UecmLog.Infoln("handle RegisterAmfNon3gppAccessRequest")
 	registerRequest := request.Body.(models.AmfNon3GppAccessRegistration)
 	ueID := request.Params["ueId"]
-
-	// step 3: handle the message
 	header, response, problemDetails := RegisterAmfNon3gppAccessProcedure(registerRequest, ueID)
-
-	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
@@ -290,12 +262,12 @@ func RegisterAmfNon3gppAccessProcedure(registerRequest models.AmfNon3GppAccessRe
 	header http.Header, response *models.AmfNon3GppAccessRegistration, problemDetails *models.ProblemDetails,
 ) {
 	var oldAmfNon3GppAccessRegContext *models.AmfNon3GppAccessRegistration
-	if udm_context.UDM_Self().UdmAmfNon3gppRegContextExists(ueID) {
-		ue, _ := udm_context.UDM_Self().UdmUeFindBySupi(ueID)
+	if udmContext.UDM_Self().UdmAmfNon3gppRegContextExists(ueID) {
+		ue, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 		oldAmfNon3GppAccessRegContext = ue.AmfNon3GppAccessRegistration
 	}
 
-	udm_context.UDM_Self().CreateAmfNon3gppRegContext(ueID, registerRequest)
+	udmContext.UDM_Self().CreateAmfNon3gppRegContext(ueID, registerRequest)
 
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
@@ -334,25 +306,18 @@ func RegisterAmfNon3gppAccessProcedure(registerRequest models.AmfNon3GppAccessRe
 		return nil, nil, nil
 	} else {
 		header = make(http.Header)
-		udmUe, _ := udm_context.UDM_Self().UdmUeFindBySupi(ueID)
-		header.Set("Location", udmUe.GetLocationURI(udm_context.LocationUriAmfNon3GppAccessRegistration))
+		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
+		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriAmfNon3GppAccessRegistration))
 		return header, &registerRequest, nil
 	}
 }
 
-// TODO: ueID may be SUPI or GPSI, but this function did not handle this condition
+// HandleUpdateAmf3gppAccessRequest TODO: ueID may be SUPI or GPSI, but this function did not handle this condition
 func HandleUpdateAmf3gppAccessRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
-	logger.UecmLog.Infof("Handle UpdateAmf3gppAccessRequest")
-
-	// step 2: retrieve request
+	logger.UecmLog.Infoln("handle UpdateAmf3gppAccessRequest")
 	amf3GppAccessRegistrationModification := request.Body.(models.Amf3GppAccessRegistrationModification)
 	ueID := request.Params["ueId"]
-
-	// step 3: handle the message
 	problemDetails := UpdateAmf3gppAccessProcedure(amf3GppAccessRegistrationModification, ueID)
-
-	// step 4: process the return value from step 3
 	if problemDetails != nil {
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
@@ -364,7 +329,7 @@ func UpdateAmf3gppAccessProcedure(request models.Amf3GppAccessRegistrationModifi
 	problemDetails *models.ProblemDetails,
 ) {
 	var patchItemReqArray []models.PatchItem
-	currentContext := udm_context.UDM_Self().GetAmf3gppRegContext(ueID)
+	currentContext := udmContext.UDM_Self().GetAmf3gppRegContext(ueID)
 	if currentContext == nil {
 		logger.UecmLog.Errorln("[UpdateAmf3gppAccess] Empty Amf3gppRegContext")
 		problemDetails = &models.ProblemDetails{
@@ -375,7 +340,7 @@ func UpdateAmf3gppAccessProcedure(request models.Amf3GppAccessRegistrationModifi
 	}
 
 	if request.Guami != nil {
-		udmUe, _ := udm_context.UDM_Self().UdmUeFindBySupi(ueID)
+		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 		if udmUe.SameAsStoredGUAMI3gpp(*request.Guami) { // deregistration
 			logger.UecmLog.Infoln("UpdateAmf3gppAccess - deregistration")
 			request.PurgeFlag = true
@@ -452,19 +417,12 @@ func UpdateAmf3gppAccessProcedure(request models.Amf3GppAccessRegistrationModifi
 	return nil
 }
 
-// TODO: ueID may be SUPI or GPSI, but this function did not handle this condition
+// HandleUpdateAmfNon3gppAccessRequest TODO: ueID may be SUPI or GPSI, but this function did not handle this condition
 func HandleUpdateAmfNon3gppAccessRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
-	logger.UecmLog.Infof("Handle UpdateAmfNon3gppAccessRequest")
-
-	// step 2: retrieve request
+	logger.UecmLog.Infoln("handle UpdateAmfNon3gppAccessRequest")
 	requestMSG := request.Body.(models.AmfNon3GppAccessRegistrationModification)
 	ueID := request.Params["ueId"]
-
-	// step 3: handle the message
 	problemDetails := UpdateAmfNon3gppAccessProcedure(requestMSG, ueID)
-
-	// step 4: process the return value from step 3
 	if problemDetails != nil {
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
@@ -476,7 +434,7 @@ func UpdateAmfNon3gppAccessProcedure(request models.AmfNon3GppAccessRegistration
 	problemDetails *models.ProblemDetails,
 ) {
 	var patchItemReqArray []models.PatchItem
-	currentContext := udm_context.UDM_Self().GetAmfNon3gppRegContext(ueID)
+	currentContext := udmContext.UDM_Self().GetAmfNon3gppRegContext(ueID)
 	if currentContext == nil {
 		logger.UecmLog.Errorln("[UpdateAmfNon3gppAccess] Empty AmfNon3gppRegContext")
 		problemDetails = &models.ProblemDetails{
@@ -487,7 +445,7 @@ func UpdateAmfNon3gppAccessProcedure(request models.AmfNon3GppAccessRegistration
 	}
 
 	if request.Guami != nil {
-		udmUe, _ := udm_context.UDM_Self().UdmUeFindBySupi(ueID)
+		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 		if udmUe.SameAsStoredGUAMINon3gpp(*request.Guami) { // deregistration
 			logger.UecmLog.Infoln("UpdateAmfNon3gppAccess - deregistration")
 			request.PurgeFlag = true
@@ -564,17 +522,10 @@ func UpdateAmfNon3gppAccessProcedure(request models.AmfNon3GppAccessRegistration
 }
 
 func HandleDeregistrationSmfRegistrations(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
-	logger.UecmLog.Infof("Handle DeregistrationSmfRegistrations")
-
-	// step 2: retrieve request
+	logger.UecmLog.Infoln("handle DeregistrationSmfRegistrations")
 	ueID := request.Params["ueId"]
 	pduSessionID := request.Params["pduSessionId"]
-
-	// step 3: handle the message
 	problemDetails := DeregistrationSmfRegistrationsProcedure(ueID, pduSessionID)
-
-	// step 4: process the return value from step 3
 	if problemDetails != nil {
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
@@ -606,20 +557,13 @@ func DeregistrationSmfRegistrationsProcedure(ueID string, pduSessionID string) (
 	return nil
 }
 
-// SmfRegistrations
+// HandleRegistrationSmfRegistrationsRequest SmfRegistrations
 func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	// step 1: log
-	logger.UecmLog.Infof("Handle RegistrationSmfRegistrations")
-
-	// step 2: retrieve request
+	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 	registerRequest := request.Body.(models.SmfRegistration)
 	ueID := request.Params["ueId"]
 	pduSessionID := request.Params["pduSessionId"]
-
-	// step 3: handle the message
 	header, response, problemDetails := RegistrationSmfRegistrationsProcedure(&registerRequest, ueID, pduSessionID)
-
-	// step 4: process the return value from step 3
 	if response != nil {
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
@@ -631,13 +575,13 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 	}
 }
 
-// SmfRegistrationsProcedure
+// RegistrationSmfRegistrationsProcedure SmfRegistrationsProcedure
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
 	contextExisted := false
-	udm_context.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
-	if !udm_context.UDM_Self().UdmSmfRegContextNotExists(ueID) {
+	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
+	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
 		contextExisted = true
 	}
 
@@ -677,8 +621,8 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		return nil, nil, nil
 	} else {
 		header = make(http.Header)
-		udmUe, _ := udm_context.UDM_Self().UdmUeFindBySupi(ueID)
-		header.Set("Location", udmUe.GetLocationURI(udm_context.LocationUriSmfRegistration))
+		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
+		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
 		return header, request, nil
 	}
 }
