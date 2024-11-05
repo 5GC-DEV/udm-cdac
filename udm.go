@@ -10,13 +10,13 @@ import (
 
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/service"
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"go.uber.org/zap"
 )
 
 var UDM = &service.UDM{}
 
-var appLog *logrus.Entry
+var appLog *zap.SugaredLogger
 
 func init() {
 	appLog = logger.AppLog
@@ -25,19 +25,19 @@ func init() {
 func main() {
 	app := cli.NewApp()
 	app.Name = "udm"
-	fmt.Print(app.Name, "\n")
+	appLog.Infoln(app.Name)
 	app.Usage = "-free5gccfg common configuration file -udmcfg udm configuration file"
 	app.Action = action
 	app.Flags = UDM.GetCliCmd()
 	if err := app.Run(os.Args); err != nil {
-		appLog.Errorf("UDM Run error: %v", err)
+		appLog.Errorf("udm run error: %v", err)
 	}
 }
 
 func action(c *cli.Context) error {
 	if err := UDM.Initialize(c); err != nil {
 		logger.CfgLog.Errorf("%+v", err)
-		return fmt.Errorf("Failed to initialize !!")
+		return fmt.Errorf("failed to initialize")
 	}
 
 	UDM.Start()
