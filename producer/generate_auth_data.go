@@ -13,7 +13,6 @@ import (
 	"math/big"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/antihax/optional"
@@ -185,14 +184,10 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)
 	logger.UeauLog.Info("---authSubs.SequenceNumber:", authSubs.SequenceNumber)
-	// converting seqno from string to uint32
+	// converting seqno from string to byte
 	seqno := authSubs.SequenceNumber
-	uintofseqno, err := strconv.ParseUint(seqno, 10, 32)
-	if err != nil {
-		logger.UeauLog.Info("error:", err)
-		return
-	}
-	logger.UeauLog.Info("---uint32 of seqno is: ", uint32(uintofseqno))
+	byteofseqno := []byte(seqno)
+	logger.UeauLog.Info("---byte of seqno: ", byteofseqno)
 	//
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
@@ -323,7 +318,11 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	// implement code of converting sqn number to int
 	sqnStr := strictHex(authSubs.SequenceNumber, 12)
 	logger.UeauLog.Traceln("sqnStr", sqnStr)
-	logger.UeauLog.Info("sqnStr: ", sqnStr)
+	logger.UeauLog.Info("---sqnStr: ", sqnStr)
+	// converting seqno from string to byte
+	byteofsqnStr := []byte(sqnStr)
+	logger.UeauLog.Info("---byte of sqnstr after stricthex: ", byteofsqnStr)
+	//
 	sqn, err := hex.DecodeString(sqnStr)
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
@@ -434,6 +433,10 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 			logger.UeauLog.Info("---**sqnstr resync before stricthex: ", sqnStr)
 			sqnStr = strictHex(sqnStr, 12)
 			logger.UeauLog.Info("---**sqnStr resync after stricthex: ", sqnStr)
+			// converting sqnStr from string to byte
+			byteofsqnStr := []byte(sqnStr)
+			logger.UeauLog.Info("---byte of sqnstr after stricthex resync: ", byteofsqnStr)
+			//
 		} else {
 			logger.UeauLog.Errorln("Re-Sync MAC failed ", supi)
 			logger.UeauLog.Errorln("MACS ", macS)
