@@ -70,7 +70,7 @@ func aucSQN(opc, k, auts, rand []byte) ([]byte, []byte) {
 	return SQNms, macS
 }
 
-// Modification by cdac
+// Replaced Sprintln with Sprint for format the hexadecimal string properly
 func strictHex(s string, n int) string {
 	l := len(s)
 	if l < n {
