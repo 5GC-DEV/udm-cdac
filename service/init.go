@@ -13,11 +13,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/omec-project/config5g/proto/client"
+	grpcClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/openapi/models"
 	nrfCache "github.com/omec-project/openapi/nrfcache"
@@ -36,7 +37,6 @@ import (
 	"github.com/omec-project/udm/util"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/omec-project/util/path_util"
 	"github.com/urfave/cli"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -53,7 +53,7 @@ func init() {
 type (
 	// Config information.
 	Config struct {
-		udmcfg string
+		cfg string
 	}
 )
 
@@ -61,12 +61,9 @@ var config Config
 
 var udmCLi = []cli.Flag{
 	cli.StringFlag{
-		Name:  "free5gccfg",
-		Usage: "common config file",
-	},
-	cli.StringFlag{
-		Name:  "udmcfg",
-		Usage: "config file",
+		Name:     "cfg",
+		Usage:    "udm config file",
+		Required: true,
 	},
 }
 
@@ -75,31 +72,26 @@ var (
 	KeepAliveTimerMutex sync.Mutex
 )
 
-var initLog *zap.SugaredLogger
-
-func init() {
-	initLog = logger.InitLog
-}
-
 func (*UDM) GetCliCmd() (flags []cli.Flag) {
 	return udmCLi
 }
 
 func (udm *UDM) Initialize(c *cli.Context) error {
 	config = Config{
-		udmcfg: c.String("udmcfg"),
+		cfg: c.String("cfg"),
 	}
 
-	if config.udmcfg != "" {
-		if err := factory.InitConfigFactory(config.udmcfg); err != nil {
-			return err
-		}
-	} else {
-		DefaultUdmConfigPath := path_util.Free5gcPath("free5gc/config/udmcfg.yaml")
-		if err := factory.InitConfigFactory(DefaultUdmConfigPath); err != nil {
-			return err
-		}
+	absPath, err := filepath.Abs(config.cfg)
+	if err != nil {
+		logger.CfgLog.Errorln(err)
+		return err
 	}
+
+	if err := factory.InitConfigFactory(absPath); err != nil {
+		return err
+	}
+
+	factory.UdmConfig.CfgLocation = absPath
 
 	udm.setLogLevel()
 
@@ -107,14 +99,12 @@ func (udm *UDM) Initialize(c *cli.Context) error {
 		return err
 	}
 
-	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-	if roc == "true" {
-		initLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-		commChannel := client.ConfigWatcher(factory.UdmConfig.Configuration.WebuiUri)
-		go udm.updateConfig(commChannel)
+	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
+		logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
+		go manageGrpcClient(factory.UdmConfig.Configuration.WebuiUri, udm)
 	} else {
 		go func() {
-			initLog.Infoln("Use helm chart config ")
+			logger.InitLog.Infoln("use helm chart config ")
 			ConfigPodTrigger <- true
 		}()
 	}
@@ -122,24 +112,76 @@ func (udm *UDM) Initialize(c *cli.Context) error {
 	return nil
 }
 
+// manageGrpcClient connects the config pod GRPC server and subscribes the config changes.
+// Then it updates UDM configuration.
+func manageGrpcClient(webuiUri string, udm *UDM) {
+	var configChannel chan *protos.NetworkSliceResponse
+	var client grpcClient.ConfClient
+	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	var err error
+	count := 0
+	for {
+		if client != nil {
+			if client.CheckGrpcConnectivity() != "ready" {
+				time.Sleep(time.Second * 30)
+				count++
+				if count > 5 {
+					err = client.GetConfigClientConn().Close()
+					if err != nil {
+						logger.InitLog.Infof("failing ConfigClient is not closed properly: %+v", err)
+					}
+					client = nil
+					count = 0
+				}
+				logger.InitLog.Infoln("checking the connectivity readiness")
+				continue
+			}
+
+			if stream == nil {
+				stream, err = client.SubscribeToConfigServer()
+				if err != nil {
+					logger.InitLog.Infof("failing SubscribeToConfigServer: %+v", err)
+					continue
+				}
+			}
+
+			if configChannel == nil {
+				configChannel = client.PublishOnConfigChange(true, stream)
+				logger.InitLog.Infoln("PublishOnConfigChange is triggered")
+				go udm.updateConfig(configChannel)
+				logger.InitLog.Infoln("UDM updateConfig is triggered")
+			}
+		} else {
+			client, err = grpcClient.ConnectToConfigServer(webuiUri)
+			stream = nil
+			configChannel = nil
+			logger.InitLog.Infoln("connecting to config server")
+			if err != nil {
+				logger.InitLog.Errorf("%+v", err)
+			}
+			continue
+		}
+	}
+}
+
 func (udm *UDM) setLogLevel() {
 	if factory.UdmConfig.Logger == nil {
-		initLog.Warnln("UDM config without log level setting!!!")
+		logger.InitLog.Warnln("UDM config without log level setting")
 		return
 	}
 
 	if factory.UdmConfig.Logger.UDM != nil {
 		if factory.UdmConfig.Logger.UDM.DebugLevel != "" {
 			if level, err := zapcore.ParseLevel(factory.UdmConfig.Logger.UDM.DebugLevel); err != nil {
-				initLog.Warnf("UDM Log level [%s] is invalid, set to [info] level",
+				logger.InitLog.Warnf("UDM Log level [%s] is invalid, set to [info] level",
 					factory.UdmConfig.Logger.UDM.DebugLevel)
 				logger.SetLogLevel(zap.InfoLevel)
 			} else {
-				initLog.Infof("UDM Log level is set to [%s] level", level)
+				logger.InitLog.Infof("UDM Log level is set to [%s] level", level)
 				logger.SetLogLevel(level)
 			}
 		} else {
-			initLog.Infoln("UDM Log level is default set to [info] level")
+			logger.InitLog.Infoln("UDM Log level is default set to [info] level")
 			logger.SetLogLevel(zap.InfoLevel)
 		}
 	}
@@ -164,9 +206,9 @@ func (udm *UDM) Start() {
 	sbi := configuration.Sbi
 	serviceName := configuration.ServiceList
 
-	initLog.Infof("UDM Config Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
+	logger.InitLog.Infof("UDM Config Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 
-	initLog.Infoln("Server started")
+	logger.InitLog.Infoln("server started")
 
 	router := utilLogger.NewGinWithZap(logger.GinLog)
 
@@ -180,22 +222,13 @@ func (udm *UDM) Start() {
 
 	go metrics.InitMetrics()
 
-	udmLogPath := path_util.Free5gcPath("omec-project/udmsslkey.log")
-	udmPemPath := path_util.Free5gcPath("free5gc/support/TLS/udm.pem")
-	udmKeyPath := path_util.Free5gcPath("free5gc/support/TLS/udm.key")
-	if sbi.Tls != nil {
-		udmLogPath = path_util.Free5gcPath(sbi.Tls.Log)
-		udmPemPath = sbi.Tls.Pem
-		udmKeyPath = sbi.Tls.Key
-	}
-
 	self := context.UDM_Self()
 	util.InitUDMContext(self)
 	context.UDM_Self().InitNFService(serviceName, config.Info.Version)
 
 	addr := fmt.Sprintf("%s:%d", self.BindingIPv4, self.SBIPort)
 	if self.EnableNrfCaching {
-		initLog.Infoln("enable NRF caching feature")
+		logger.InitLog.Infoln("enable NRF caching feature")
 		nrfCache.InitNrfCaching(self.NrfCacheEvictionInterval*time.Second, consumer.SendNfDiscoveryToNrf)
 	}
 	go udm.RegisterNF()
@@ -208,65 +241,66 @@ func (udm *UDM) Start() {
 		os.Exit(0)
 	}()
 
-	server, err := http2_util.NewServer(addr, udmLogPath, router)
+	sslLog := filepath.Dir(factory.UdmConfig.CfgLocation) + "/sslkey.log"
+	server, err := http2_util.NewServer(addr, sslLog, router)
 	if server == nil {
-		initLog.Errorf("Initialize HTTP server failed: %+v", err)
+		logger.InitLog.Errorf("initialize HTTP server failed: %+v", err)
 		return
 	}
 
 	if err != nil {
-		initLog.Warnf("Initialize HTTP server: +%v", err)
+		logger.InitLog.Warnf("initialize HTTP server: +%v", err)
 	}
 
 	serverScheme := factory.UdmConfig.Configuration.Sbi.Scheme
 	if serverScheme == "http" {
 		err = server.ListenAndServe()
 	} else if serverScheme == "https" {
-		err = server.ListenAndServeTLS(udmPemPath, udmKeyPath)
+		err = server.ListenAndServeTLS(sbi.Tls.Pem, sbi.Tls.Key)
 	}
 
 	if err != nil {
-		initLog.Fatalf("HTTP server setup failed: %+v", err)
+		logger.InitLog.Fatalf("HTTP server setup failed: %+v", err)
 	}
 }
 
 func (udm *UDM) Exec(c *cli.Context) error {
 	// UDM.Initialize(cfgPath, c)
 
-	initLog.Debugln("args:", c.String("udmcfg"))
+	logger.InitLog.Debugln("args:", c.String("udmcfg"))
 	args := udm.FilterCli(c)
-	initLog.Debugln("filter:", args)
+	logger.InitLog.Debugln("filter:", args)
 	command := exec.Command("./udm", args...)
 
 	stdout, err := command.StdoutPipe()
 	if err != nil {
-		initLog.Fatalln(err)
+		logger.InitLog.Fatalln(err)
 	}
 	wg := sync.WaitGroup{}
 	wg.Add(3)
 	go func() {
 		in := bufio.NewScanner(stdout)
 		for in.Scan() {
-			initLog.Infoln(in.Text())
+			logger.InitLog.Infoln(in.Text())
 		}
 		wg.Done()
 	}()
 
 	stderr, err := command.StderrPipe()
 	if err != nil {
-		initLog.Fatalln(err)
+		logger.InitLog.Fatalln(err)
 	}
 	go func() {
 		in := bufio.NewScanner(stderr)
 		for in.Scan() {
-			initLog.Infoln(in.Text())
+			logger.InitLog.Infoln(in.Text())
 		}
 		wg.Done()
 	}()
 
 	go func() {
 		if err = command.Start(); err != nil {
-			initLog.Errorf("UDM Start error: %v", err)
+			logger.InitLog.Errorf("UDM start error: %v", err)
 		}
 		wg.Done()
 	}()
@@ -277,7 +311,7 @@ func (udm *UDM) Exec(c *cli.Context) error {
 }
 
 func (udm *UDM) Terminate() {
-	logger.InitLog.Infoln("terminating UDM...")
+	logger.InitLog.Infoln("terminating UDM")
 	// deregister with NRF
 	problemDetails, err := consumer.SendDeregisterNFInstance()
 	if problemDetails != nil {
@@ -368,10 +402,10 @@ func (udm *UDM) BuildAndSendRegisterNFInstance() (models.NfProfile, error) {
 	self := context.UDM_Self()
 	profile, err := consumer.BuildNFInstance(self)
 	if err != nil {
-		initLog.Errorf("build UDM Profile Error:", err)
+		logger.InitLog.Errorf("build UDM Profile Error: %v", err)
 		return profile, err
 	}
-	initLog.Infof("UDM Profile Registering to NRF: %v", profile)
+	logger.InitLog.Infof("UDM Profile Registering to NRF: %v", profile)
 	// Indefinite attempt to register until success
 	profile, _, self.NfId, err = consumer.SendRegisterNFInstance(self.NrfUri, self.NfId, profile)
 	return profile, err
@@ -382,7 +416,7 @@ func (udm *UDM) UpdateNF() {
 	KeepAliveTimerMutex.Lock()
 	defer KeepAliveTimerMutex.Unlock()
 	if KeepAliveTimer == nil {
-		initLog.Warnf("keepAlive timer has been stopped")
+		logger.InitLog.Warnln("keepAlive timer has been stopped")
 		return
 	}
 	// setting default value 30 sec
@@ -396,21 +430,21 @@ func (udm *UDM) UpdateNF() {
 	patchItem = append(patchItem, pitem)
 	nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(patchItem)
 	if problemDetails != nil {
-		initLog.Errorf("UDM update to NRF ProblemDetails[%v]", problemDetails)
+		logger.InitLog.Errorf("UDM update to NRF ProblemDetails[%v]", problemDetails)
 		// 5xx response from NRF, 404 Not Found, 400 Bad Request
 		if (problemDetails.Status/100) == 5 ||
 			problemDetails.Status == 404 || problemDetails.Status == 400 {
 			// register with NRF full profile
 			nfProfile, err = udm.BuildAndSendRegisterNFInstance()
 			if err != nil {
-				initLog.Errorf("UDM update to NRF Error[%s]", err.Error())
+				logger.InitLog.Errorf("UDM update to NRF Error[%s]", err.Error())
 			}
 		}
 	} else if err != nil {
-		initLog.Errorf("UDM update to NRF Error[%s]", err.Error())
+		logger.InitLog.Errorf("UDM update to NRF Error[%s]", err.Error())
 		nfProfile, err = udm.BuildAndSendRegisterNFInstance()
 		if err != nil {
-			initLog.Errorf("UDM update to NRF Error[%s]", err.Error())
+			logger.InitLog.Errorf("UDM update to NRF Error[%s]", err.Error())
 		}
 	}
 
@@ -426,7 +460,7 @@ func (udm *UDM) UpdateNF() {
 func (udm *UDM) RegisterNF() {
 	self := context.UDM_Self()
 	for msg := range ConfigPodTrigger {
-		initLog.Infof("minimum configuration from config pod available %v", msg)
+		logger.InitLog.Infof("minimum configuration from config pod available %v", msg)
 		profile, err := consumer.BuildNFInstance(self)
 		if err != nil {
 			logger.InitLog.Errorln(err.Error())
