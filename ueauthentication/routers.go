@@ -106,4 +106,11 @@ var routes = Routes{
 		"/:supi/auth-events",
 		HTTPConfirmAuth,
 	},
+
+	{
+		"GetHssAv",
+		strings.ToUpper("Post"),
+		"/:supi/hss-security-information/:hssAuthType/generateav",
+		HttpGenerateHssAuthVect,
+	},
 }

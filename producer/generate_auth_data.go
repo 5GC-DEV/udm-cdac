@@ -28,6 +28,93 @@ import (
 	"github.com/omec-project/util/util_3gpp/suci"
 )
 
+// TODO: HssAuthenticationInfoRequest - Should be in OpenAPI - ETSI TS 129 503 V16.4.0 6.3.6.3.7
+type HssAuthTypeInUri string
+
+const (
+	HssAuthTypeInUri_EPS_AKA       HssAuthTypeInUri = "eps-aka"
+	HssAuthTypeInUri_EAP_AKA       HssAuthTypeInUri = "eap-aka"
+	HssAuthTypeInUri_EAP_AKA_PRIME HssAuthTypeInUri = "eap-aka-prime"
+	HssAuthTypeInUri_IMS_AKA       HssAuthTypeInUri = "ims-aka"
+	HssAuthTypeInUri_GBA_AKA       HssAuthTypeInUri = "gba-aka"
+)
+
+// TODO: HssAuthenticationInfoRequest - Should be in OpenAPI - ETSI TS 129 503 V16.4.0 6.3.6.2.10
+type HssAuthType string
+
+const (
+	HssAuthType_EPS_AKA       HssAuthType = "EPS_AKA"
+	HssAuthType_EAP_AKA       HssAuthType = "EAP_AKA"
+	HssAuthType_EAP_AKA_PRIME HssAuthType = "EAP_AKA_PRIME"
+	HssAuthType_IMS_AKA       HssAuthType = "IMS_AKA"
+	HssAuthType_GBA_AKA       HssAuthType = "GBA_AKA"
+)
+
+type AccessNetworkId string
+
+const (
+	AccessNetworkId_HRPD     AccessNetworkId = "HRPD"
+	AccessNetworkId_WIMAX    AccessNetworkId = "WIMAX"
+	AccessNetworkId_WLAN     AccessNetworkId = "WLAN"
+	AccessNetworkId_ETHERNET AccessNetworkId = "ETHERNET"
+)
+
+type HssAuthenticationInfoRequest struct {
+	HssAuthType           HssAuthType                   `json:"hssAuthType" yaml:"hssAuthType" bson:"hssAuthType" mapstructure:"hssAuthType"`
+	NumOfRequestedVectors int                           `json:"numOfRequestedVectors" yaml:"numOfRequestedVectors" bson:"numOfRequestedVectors" mapstructure:"numOfRequestedVectors"`
+	ServingNetworkId      *models.PlmnId                `json:"servingNetworkId,omitempty" yaml:"servingNetworkId" bson:"servingNetworkId" mapstructure:"servingNetworkId"`
+	ResynchronizationInfo *models.ResynchronizationInfo `json:"resynchronizationInfo,omitempty" yaml:"resynchronizationInfo" bson:"resynchronizationInfo" mapstructure:"resynchronizationInfo"`
+	AnId                  AccessNetworkId               `json:"anId,omitempty" yaml:"anId" bson:"anId" mapstructure:"anId"`
+	SupportedFeatures     string                        `json:"supportedFeatures,omitempty" yaml:"supportedFeatures" bson:"supportedFeatures" mapstructure:"supportedFeatures"`
+}
+
+// TODO: HssAuthenticationInfoResult - Should be in OpenAPI - ETSI TS 129 503 V16.4.0 6.3.6.2.11
+type HssAvType string
+
+const (
+	HssAvType_EPS_AKA HssAvType = "EPS_AKA"
+	HssAvType_EAP_AKA HssAvType = "EAP_AKA"
+	HssAvType_IMS_AKA HssAvType = "IMS_AKA"
+	HssAvType_GBA_AKA HssAvType = "GBA_AKA"
+)
+
+type AvEpsAka struct {
+	AvType HssAvType `json:"avType" yaml:"avType" bson:"avType" mapstructure:"avType" validate:"required"`
+	Rand   string    `json:"rand" yaml:"rand" bson:"rand" mapstructure:"rand" validate:"required"`
+	Xres   string    `json:"xres" yaml:"xres" bson:"xres" mapstructure:"xres" validate:"required"`
+	Autn   string    `json:"autn" yaml:"autn" bson:"autn" mapstructure:"autn" validate:"required"`
+	Kasme  string    `json:"kasme" yaml:"kasme" bson:"kasme" mapstructure:"kasme" validate:"required"`
+}
+
+type AvImsGbaEapAka struct {
+	AvType             HssAvType `json:"avType" yaml:"avType" bson:"avType" mapstructure:"avType" validate:"required"`
+	Rand               string    `json:"rand" yaml:"rand" bson:"rand" mapstructure:"rand" validate:"required"`
+	Xres               string    `json:"xres" yaml:"xres" bson:"xres" mapstructure:"xres" validate:"required"`
+	Autn               string    `json:"autn" yaml:"autn" bson:"autn" mapstructure:"autn" validate:"required"`
+	ConfidentialityKey string    `json:"ck" yaml:"ck" bson:"ck" mapstructure:"ck" validate:"required"`
+	IntegrityKey       string    `json:"ik" yaml:"ik" bson:"ik" mapstructure:"ik" validate:"required"`
+}
+
+type AvEapAkaPrime struct {
+	AvType  HssAvType `json:"avType" yaml:"avType" bson:"avType" mapstructure:"avType" validate:"required"`
+	Xres    string    `json:"xres" yaml:"xres" bson:"xres" mapstructure:"xres" validate:"required"`
+	Rand    string    `json:"rand" yaml:"rand" bson:"rand" mapstructure:"rand" validate:"required"`
+	Autn    string    `json:"autn" yaml:"autn" bson:"autn" mapstructure:"autn" validate:"required"`
+	CkPrime string    `json:"ckPrime" yaml:"ckPrime" bson:"ckPrime" mapstructure:"CkPrime" validate:"required"`
+	IkPrime string    `json:"ikPrime" yaml:"ikPrime" bson:"ikPrime" mapstructure:"IkPrime" validate:"required"`
+}
+
+type HssAuthenticationVectors struct {
+	AvEpsAka       []AvEpsAka
+	AvImsGbaEapAka []AvImsGbaEapAka
+	AvEapAkaPrime  []AvEapAkaPrime
+}
+
+type HssAuthenticationInfoResult struct {
+	HssAuthenticationVectors HssAuthenticationVectors `json:"hssAuthenticationVectors" yaml:"hssAuthenticationVectors" bson:"hssAuthenticationVectors" mapstructure:"hssAuthenticationVectors"`
+	SupportedFeatures        string                   `json:"supportedFeatures,omitempty" yaml:"supportedFeatures" bson:"supportedFeatures" mapstructure:"supportedFeatures"`
+}
+
 const (
 	SqnMAx    int64 = 0x7FFFFFFFFFF
 	ind       int64 = 32
@@ -87,6 +174,25 @@ func HandleGenerateAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Re
 	response, problemDetails := GenerateAuthDataProcedure(authInfoRequest, supiOrSuci)
 	if response != nil {
 		// status code is based on SPEC, and option headers
+		return httpwrapper.NewResponse(http.StatusOK, nil, response)
+	} else if problemDetails != nil {
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+	}
+	problemDetails = &models.ProblemDetails{
+		Status: http.StatusForbidden,
+		Cause:  "UNSPECIFIED",
+	}
+	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
+}
+
+func HandleGenerateHssAuthVectorRequest(request *httpwrapper.Request) *httpwrapper.Response {
+	logger.UeauLog.Infoln("handle HandleGenerateHssAuthVectorRequest")
+	hssAuthInfpoReq := request.Body.(HssAuthenticationInfoRequest)
+	supi := request.Params["supi"]
+	hssAuthType := request.Params["hssAuthType"]
+
+	response, problemDetails := GenerateHssAuthVectorProcedure(hssAuthInfpoReq, supi, hssAuthType)
+	if response != nil {
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
@@ -538,5 +644,354 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 
 	response.AuthenticationVector = &av
 	response.Supi = supi
+	return response, nil
+}
+
+func GenerateHssAuthVectorProcedure(hssAuthInfpoReq HssAuthenticationInfoRequest, supi, hssAuthType string) (
+	response *HssAuthenticationInfoResult, problemDetails *models.ProblemDetails,
+) {
+	logger.UeauLog.Debugln("in GenerateHssAuthVectorProcedure")
+	response = &HssAuthenticationInfoResult{}
+
+	supi, err := suci.ToSupi(supi, udm_context.UDM_Self().SuciProfiles)
+	if err != nil {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: err.Error(),
+		}
+
+		logger.UeauLog.Errorln("suciToSupi error:", err.Error())
+		return nil, problemDetails
+	}
+	logger.UeauLog.Debugf("supi conversion => %s", supi)
+
+	authType := HssAuthTypeInUri(hssAuthType)
+	switch authType {
+	case HssAuthTypeInUri_EPS_AKA,
+		HssAuthTypeInUri_EAP_AKA,
+		HssAuthTypeInUri_EAP_AKA_PRIME,
+		HssAuthTypeInUri_IMS_AKA,
+		HssAuthTypeInUri_GBA_AKA:
+		logger.UeauLog.Debugln("Valid hssAuthType: ", authType)
+	default:
+		problemDetails := &models.ProblemDetails{
+			Status: http.StatusBadRequest,
+			Cause:  authenticationRejected,
+			Detail: fmt.Sprintf("Unsupported hssAuthType: %s", hssAuthType),
+		}
+		logger.UeauLog.Warnln("Invalid hssAuthType:", hssAuthType)
+		return nil, problemDetails
+	}
+
+	client, err := createUDMClientToUDR(supi)
+	if err != nil {
+		return nil, util.ProblemDetailsSystemFailure(err.Error())
+	}
+	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, authType)
+	if err != nil {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: err.Error(),
+		}
+
+		logger.UeauLog.Errorln("return from UDR QueryAuthSubsData error")
+		return nil, problemDetails
+	}
+	defer func() {
+		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
+			logger.SdmLog.Errorf("QueryAuthSubsData response body cannot close: %+v", rspCloseErr)
+		}
+	}()
+
+	hasK, hasOP, hasOPC := false, false, false
+
+	var kStr, opStr, opcStr string
+
+	k, op, opc := make([]byte, 16), make([]byte, 16), make([]byte, 16)
+
+	logger.UeauLog.Debugln("K", k)
+
+	if authSubs.PermanentKey != nil {
+		kStr = authSubs.PermanentKey.PermanentKeyValue
+		if len(kStr) == keyStrLen {
+			k, err = hex.DecodeString(kStr)
+			if err != nil {
+				logger.UeauLog.Errorln("err", err)
+			} else {
+				hasK = true
+			}
+		} else {
+			problemDetails = &models.ProblemDetails{
+				Status: http.StatusForbidden,
+				Cause:  authenticationRejected,
+			}
+
+			logger.UeauLog.Errorln("kStr length is", len(kStr))
+			return nil, problemDetails
+		}
+	} else {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+		}
+
+		logger.UeauLog.Errorln("Nil PermanentKey")
+		return nil, problemDetails
+	}
+
+	if authSubs.Milenage != nil {
+		if authSubs.Milenage.Op != nil {
+			opStr = authSubs.Milenage.Op.OpValue
+			if len(opStr) == opStrLen {
+				op, err = hex.DecodeString(opStr)
+				if err != nil {
+					logger.UeauLog.Errorln("err", err)
+				} else {
+					hasOP = true
+				}
+			} else {
+				logger.UeauLog.Errorln("opStr length is", len(opStr))
+			}
+		} else {
+			logger.UeauLog.Infoln("Nil Op")
+		}
+	} else {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+		}
+
+		logger.UeauLog.Infoln("Nil Milenage")
+		return nil, problemDetails
+	}
+
+	if authSubs.Opc != nil && authSubs.Opc.OpcValue != "" {
+		opcStr = authSubs.Opc.OpcValue
+		if len(opcStr) == opcStrLen {
+			opc, err = hex.DecodeString(opcStr)
+			if err != nil {
+				logger.UeauLog.Errorln("err", err)
+			} else {
+				hasOPC = true
+			}
+		} else {
+			logger.UeauLog.Errorln("opcStr length is", len(opcStr))
+		}
+	} else {
+		logger.UeauLog.Infoln("Nil Opc")
+	}
+
+	if !hasOPC && !hasOP {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+		}
+
+		return nil, problemDetails
+	}
+
+	if !hasOPC {
+		if hasK && hasOP {
+			opc, err = milenage.GenerateOPC(k, op)
+			if err != nil {
+				logger.UeauLog.Errorln("milenage GenerateOPC err", err)
+			}
+		} else {
+			problemDetails = &models.ProblemDetails{
+				Status: http.StatusForbidden,
+				Cause:  authenticationRejected,
+			}
+
+			logger.UeauLog.Errorln("unable to derive OPC")
+			return nil, problemDetails
+		}
+	}
+
+	sqnStr := strictHex(authSubs.SequenceNumber, 12)
+	logger.UeauLog.Debugln("sqnStr", sqnStr)
+	sqn, err := hex.DecodeString(sqnStr)
+	if err != nil {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: err.Error(),
+		}
+
+		logger.UeauLog.Errorln("err", err)
+		return nil, problemDetails
+	}
+
+	logger.UeauLog.Debugln("sqn", sqn)
+
+	RAND := make([]byte, 16)
+	_, err = rand.Read(RAND)
+	if err != nil {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: err.Error(),
+		}
+
+		logger.UeauLog.Errorln("err", err)
+		return nil, problemDetails
+	}
+
+	AMF, err := hex.DecodeString("8000")
+	if err != nil {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: err.Error(),
+		}
+
+		logger.UeauLog.Errorln("err", err)
+		return nil, problemDetails
+	}
+
+	// re-synchroniztion
+	if hssAuthInfpoReq.ResynchronizationInfo != nil {
+		Auts, deCodeErr := hex.DecodeString(hssAuthInfpoReq.ResynchronizationInfo.Auts)
+		if deCodeErr != nil {
+			problemDetails = &models.ProblemDetails{
+				Status: http.StatusForbidden,
+				Cause:  authenticationRejected,
+				Detail: deCodeErr.Error(),
+			}
+
+			logger.UeauLog.Errorln("err", deCodeErr)
+			return nil, problemDetails
+		}
+
+		randHex, deCodeErr := hex.DecodeString(hssAuthInfpoReq.ResynchronizationInfo.Rand)
+		if deCodeErr != nil {
+			problemDetails = &models.ProblemDetails{
+				Status: http.StatusForbidden,
+				Cause:  authenticationRejected,
+				Detail: deCodeErr.Error(),
+			}
+
+			logger.UeauLog.Errorln("err", deCodeErr)
+			return nil, problemDetails
+		}
+
+		SQNms, macS := aucSQN(opc, k, Auts, randHex)
+		if reflect.DeepEqual(macS, Auts[6:]) {
+			_, err = rand.Read(RAND)
+			if err != nil {
+				problemDetails = &models.ProblemDetails{
+					Status: http.StatusForbidden,
+					Cause:  authenticationRejected,
+					Detail: err.Error(),
+				}
+
+				logger.UeauLog.Errorln("err", err)
+				return nil, problemDetails
+			}
+
+			// increment sqn authSubs.SequenceNumber
+			bigSQN := big.NewInt(0)
+			sqnStr = hex.EncodeToString(SQNms)
+			logger.UeauLog.Infof("SQNstr %s", sqnStr)
+			bigSQN.SetString(sqnStr, 16)
+
+			bigInc := big.NewInt(ind + 1)
+
+			bigP := big.NewInt(SqnMAx)
+			bigSQN = bigInc.Add(bigSQN, bigInc)
+			bigSQN = bigSQN.Mod(bigSQN, bigP)
+			sqnStr = fmt.Sprintf("%x", bigSQN)
+			sqnStr = strictHex(sqnStr, 12)
+		} else {
+			logger.UeauLog.Errorln("Re-Sync MAC failed", supi)
+			logger.UeauLog.Errorln("MACS", macS)
+			logger.UeauLog.Errorln("Auts[6:]", Auts[6:])
+			logger.UeauLog.Errorln("Sqn", SQNms)
+			problemDetails = &models.ProblemDetails{
+				Status: http.StatusForbidden,
+				Cause:  "modification is rejected",
+			}
+			return nil, problemDetails
+		}
+	}
+
+	// increment sqn
+	bigSQN := big.NewInt(0)
+	sqn, err = hex.DecodeString(sqnStr)
+	if err != nil {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: err.Error(),
+		}
+
+		logger.UeauLog.Errorln("err", err)
+		return nil, problemDetails
+	}
+
+	bigSQN.SetString(sqnStr, 16)
+
+	bigInc := big.NewInt(1)
+	bigSQN = bigInc.Add(bigSQN, bigInc)
+
+	SQNheStr := fmt.Sprintf("%x", bigSQN)
+	SQNheStr = strictHex(SQNheStr, 12)
+	patchItemArray := []models.PatchItem{
+		{
+			Op:    models.PatchOperation_REPLACE,
+			Path:  "/sequenceNumber",
+			Value: SQNheStr,
+		},
+	}
+
+	var rsp *http.Response
+	rsp, err = client.AuthenticationDataDocumentApi.ModifyAuthentication(
+		context.Background(), supi, patchItemArray)
+	if err != nil {
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  "modification is rejected ",
+			Detail: err.Error(),
+		}
+
+		logger.UeauLog.Errorln("update sqn error", err)
+		return nil, problemDetails
+	}
+	defer func() {
+		if rspCloseErr := rsp.Body.Close(); rspCloseErr != nil {
+			logger.SdmLog.Errorf("ModifyAuthentication response body cannot close: %+v", rspCloseErr)
+		}
+	}()
+
+	// Run milenage
+	macA, macS := make([]byte, 8), make([]byte, 8)
+	CK, IK := make([]byte, 16), make([]byte, 16)
+	RES := make([]byte, 8)
+	AK, AKstar := make([]byte, 6), make([]byte, 6)
+
+	// Generate macA, macS
+	err = milenage.F1(opc, k, RAND, sqn, AMF, macA, macS)
+	if err != nil {
+		logger.UeauLog.Errorln("milenage F1 err ", err)
+	}
+
+	// Generate RES, CK, IK, AK, AKstar
+	// RES == XRES (expected RES) for server
+	err = milenage.F2345(opc, k, RAND, RES, CK, IK, AK, AKstar)
+	if err != nil {
+		logger.UeauLog.Errorln("milenage F2345 err", err)
+	}
+
+	// Generate AUTN
+	SQNxorAK := make([]byte, 6)
+	for i := 0; i < len(sqn); i++ {
+		SQNxorAK[i] = sqn[i] ^ AK[i]
+	}
+	AUTN := append(append(SQNxorAK, AMF...), macA...)
+	logger.UeauLog.Infof("AUTN = %x", AUTN)
+
+	response.SupportedFeatures = hssAuthInfpoReq.SupportedFeatures
+	response.HssAuthenticationVectors.AvEapAkaPrime = nil
 	return response, nil
 }

@@ -18,13 +18,40 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/producer"
 	"github.com/omec-project/util/httpwrapper"
 )
+
+type HssAuthType string
+
+const (
+	HssAuthType_EPS_AKA       HssAuthType = "EPS_AKA"
+	HssAuthType_EAP_AKA       HssAuthType = "EAP_AKA"
+	HssAuthType_EAP_AKA_PRIME HssAuthType = "EAP_AKA_PRIME"
+	HssAuthType_IMS_AKA       HssAuthType = "IMS_AKA"
+	HssAuthType_GBA_AKA       HssAuthType = "GBA_AKA"
+)
+
+type AccessNetworkId string
+
+const (
+	AccessNetworkId_HRPD     AccessNetworkId = "HRPD"
+	AccessNetworkId_WIMAX    AccessNetworkId = "WIMAX"
+	AccessNetworkId_WLAN     AccessNetworkId = "WLAN"
+	AccessNetworkId_ETHERNET AccessNetworkId = "ETHERNET"
+)
+
+type HssAuthenticationInfoRequest struct {
+	HssAuthType           HssAuthType                   `json:"hssAuthType" yaml:"hssAuthType" bson:"hssAuthType" mapstructure:"hssAuthType"`
+	NumOfRequestedVectors int                           `json:"numOfRequestedVectors" yaml:"numOfRequestedVectors" bson:"numOfRequestedVectors" mapstructure:"numOfRequestedVectors"`
+	ServingNetworkId      *models.PlmnId                `json:"servingNetworkId,omitempty" yaml:"servingNetworkId" bson:"servingNetworkId" mapstructure:"servingNetworkId"`
+	ResynchronizationInfo *models.ResynchronizationInfo `json:"resynchronizationInfo,omitempty" yaml:"resynchronizationInfo" bson:"resynchronizationInfo" mapstructure:"resynchronizationInfo"`
+	AnId                  AccessNetworkId               `json:"anId,omitempty" yaml:"anId" bson:"anId" mapstructure:"anId"`
+	SupportedFeatures     string                        `json:"supportedFeatures,omitempty" yaml:"supportedFeatures" bson:"supportedFeatures" mapstructure:"supportedFeatures"`
+}
 
 // GenerateAuthData - Generate authentication data for the UE
 func HttpGenerateAuthData(c *gin.Context) {
@@ -66,6 +93,61 @@ func HttpGenerateAuthData(c *gin.Context) {
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
 		logger.UeauLog.Errorln(err)
+		problemDetails := models.ProblemDetails{
+			Status: http.StatusInternalServerError,
+			Cause:  "SYSTEM_FAILURE",
+			Detail: err.Error(),
+		}
+		c.JSON(http.StatusInternalServerError, problemDetails)
+	} else {
+		c.Data(rsp.Status, "application/json", responseBody)
+	}
+}
+
+// GenerateHssAuthData - HSS retrieves authentication vector(s) for the UE from the UDM
+func HttpGenerateHssAuthVect(c *gin.Context) {
+	var hssAuthInfpoReq HssAuthenticationInfoRequest
+	// step 1: retrieve http request body
+	requestBody, err := c.GetRawData()
+	if err != nil {
+		problemDetail := models.ProblemDetails{
+			Title:  "System failure",
+			Status: http.StatusInternalServerError,
+			Detail: err.Error(),
+			Cause:  "SYSTEM_FAILURE",
+		}
+		logger.UecmLog.Errorf("Get Request Body error: %+v", err)
+		c.JSON(http.StatusInternalServerError, problemDetail)
+		return
+	}
+
+	// step 2: convert requestBody to openapi models
+	// TODO: HssAuthenticationInfoRequest should be in OpenAPI models
+	err = openapi.Deserialize(&hssAuthInfpoReq, requestBody, "application/json")
+	if err != nil {
+		problemDetail := "[Request Body] " + err.Error()
+		rsp := models.ProblemDetails{
+			Title:  "Malformed request syntax",
+			Status: http.StatusBadRequest,
+			Detail: problemDetail,
+		}
+		logger.UecmLog.Errorln(problemDetail)
+		c.JSON(http.StatusBadRequest, rsp)
+	}
+
+	req := httpwrapper.NewRequest(c.Request, hssAuthInfpoReq)
+	req.Params["supi"] = c.Params.ByName("supi")
+	req.Params["hssAuthType"] = c.Params.ByName("hssAuthType")
+
+	rsp := producer.HandleGenerateHssAuthVectorRequest(req)
+
+	// step 5: response
+	for key, val := range rsp.Header { // header response is optional
+		c.Header(key, val[0])
+	}
+	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	if err != nil {
+		logger.UecmLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
 			Status: http.StatusInternalServerError,
 			Cause:  "SYSTEM_FAILURE",
