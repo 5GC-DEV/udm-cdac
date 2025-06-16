@@ -168,6 +168,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	logger.UeauLog.Debugf("supi conversion => %s", supi)
+	logger.UeauLog.Info("---supi conversion => %s", supi)
 
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
