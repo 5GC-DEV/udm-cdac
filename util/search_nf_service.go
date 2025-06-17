@@ -9,11 +9,13 @@ import (
 	"fmt"
 
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/udm/logger"
 )
 
 func SearchNFServiceUri(nfProfile models.NfProfile, serviceName models.ServiceName,
 	nfServiceStatus models.NfServiceStatus,
 ) (nfUri string) {
+	logger.UtilLog.Info("---in SearchNFServiceUri")
 	if nfProfile.NfServices != nil {
 		for _, service := range *nfProfile.NfServices {
 			if service.ServiceName == serviceName && service.NfServiceStatus == nfServiceStatus {

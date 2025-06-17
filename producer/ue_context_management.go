@@ -26,7 +26,9 @@ import (
 )
 
 func createUDMClientToUDR(id string) (*Nudr_DataRepository.APIClient, error) {
+	logger.Handlelog.Info("---in createUDMClientToUDR")
 	uri := getUdrURI(id)
+	logger.Handlelog.Info("---uri: ", uri)
 	if uri == "" {
 		logger.Handlelog.Errorf("ID[%s] does not match any UDR", id)
 		return nil, fmt.Errorf("no UDR URI found")
@@ -39,16 +41,20 @@ func createUDMClientToUDR(id string) (*Nudr_DataRepository.APIClient, error) {
 
 func getUdrURI(id string) string {
 	if strings.Contains(id, "imsi") || strings.Contains(id, "nai") { // supi
+		logger.UecmLog.Info("---id is imsi or supi")
 		ue, ok := udmContext.UDM_Self().UdmUeFindBySupi(id)
 		if ok {
+			logger.UecmLog.Info("---ue found with imsi")
 			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
 			return ue.UdrUri
 		} else {
+			logger.UecmLog.Info("---ue not found with imsi, creating newudmue")
 			ue = udmContext.UDM_Self().NewUdmUe(id)
 			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
 			return ue.UdrUri
 		}
 	} else if strings.Contains(id, "pei") {
+		logger.UecmLog.Info("---id is pei")
 		var udrURI string
 		udmContext.UDM_Self().UdmUePool.Range(func(key, value interface{}) bool {
 			ue := value.(*udmContext.UdmUeContext)
@@ -65,9 +71,11 @@ func getUdrURI(id string) string {
 		})
 		return udrURI
 	} else if strings.Contains(id, "extgroupid") {
+		logger.UecmLog.Info("---id is extgroupid")
 		// extra group id
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamExtGroupId)
 	} else if strings.Contains(id, "msisdn") || strings.Contains(id, "extid") {
+		logger.UecmLog.Info("---id is gpsi")
 		// gpsi
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamGpsi)
 	}
@@ -183,13 +191,16 @@ func HandleRegistrationAmf3gppAccessRequest(request *httpwrapper.Request) *httpw
 	logger.UecmLog.Info("UEID: ", ueID)
 	header, response, problemDetails := RegistrationAmf3gppAccessProcedure(registerRequest, ueID)
 	if response != nil {
+		logger.UecmLog.Infoln("---response not nil, status created")
 		stats.IncrementUdmUeContextManagementStats("create", "amf-3gpp-access", "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
+		logger.UecmLog.Infoln("---problemDetails not nil, problemdetails")
 		stats.IncrementUdmUeContextManagementStats("create", "amf-3gpp-access", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
+		logger.UecmLog.Infoln("---status no content")
 		stats.IncrementUdmUeContextManagementStats("create", "amf-3gpp-access", "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
@@ -202,11 +213,14 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 	// TODO: EPS interworking with N26 is not supported yet in this stage
 	var oldAmf3GppAccessRegContext *models.Amf3GppAccessRegistration
 	if udmContext.UDM_Self().UdmAmf3gppRegContextExists(ueID) {
+		logger.UecmLog.Infoln("---UdmAmf3gppRegContextExists")
 		ue, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 		oldAmf3GppAccessRegContext = ue.Amf3GppAccessRegistration
 	}
 
+	logger.UecmLog.Infoln("---ueID: ", ueID)
 	udmContext.UDM_Self().CreateAmf3gppRegContext(ueID, registerRequest)
+	logger.UecmLog.Infoln("---ueID: ", ueID)
 
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
@@ -219,6 +233,7 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 	resp, err := clientAPI.AMF3GPPAccessRegistrationDocumentApi.CreateAmfContext3gpp(context.Background(),
 		ueID, &createAmfContext3gppParamOpts)
 	if err != nil {
+		logger.ProducerLog.Info("---err not nil")
 		logger.UecmLog.Errorln("CreateAmfContext3gpp error : ", err)
 		problemDetails = &models.ProblemDetails{
 			Status: int32(resp.StatusCode),
