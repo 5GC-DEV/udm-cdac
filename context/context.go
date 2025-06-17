@@ -18,6 +18,7 @@ import (
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/factory"
+	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/util_3gpp/suci"
 )
@@ -238,6 +239,7 @@ func (udmUeContext *UdmUeContext) SetSMSubsData(smSubsData map[string]models.Ses
 }
 
 func (context *UDMContext) NewUdmUe(supi string) *UdmUeContext {
+	logger.ContextLog.Info("---in NewUdmUe")
 	ue := new(UdmUeContext)
 	ue.init()
 	ue.Supi = supi
@@ -246,9 +248,12 @@ func (context *UDMContext) NewUdmUe(supi string) *UdmUeContext {
 }
 
 func (context *UDMContext) UdmUeFindBySupi(supi string) (*UdmUeContext, bool) {
+	logger.ContextLog.Info("---finding udmue by supi")
 	if value, ok := context.UdmUePool.Load(supi); ok {
+		logger.ContextLog.Info("---found")
 		return value.(*UdmUeContext), ok
 	} else {
+		logger.ContextLog.Info("---not found")
 		return nil, false
 	}
 }
@@ -311,8 +316,10 @@ func (context *UDMContext) UdmSmfRegContextNotExists(supi string) bool {
 }
 
 func (context *UDMContext) CreateAmf3gppRegContext(supi string, body models.Amf3GppAccessRegistration) {
+	logger.ContextLog.Info("---in CreateAmf3gppRegContext")
 	ue, ok := context.UdmUeFindBySupi(supi)
 	if !ok {
+		logger.ContextLog.Info("---ue not found with supi, creating one with supi")
 		ue = context.NewUdmUe(supi)
 	}
 	ue.Amf3GppAccessRegistration = &body
