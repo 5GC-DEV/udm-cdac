@@ -38,7 +38,8 @@ const (
 )
 
 const (
-	authenticationRejected string = "AUTHENTICATION_REJECTED"
+	authenticationRejected = "AUTHENTICATION_REJECTED"
+	userNotFoundError      = "USER_NOT_FOUND"
 )
 
 func aucSQN(opc, k, auts, rand []byte) ([]byte, []byte) {
@@ -175,14 +176,26 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)
 	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: err.Error(),
+		var problemDetails models.ProblemDetails
+		problemDetails.Detail = err.Error()
+		if res != nil {
+			switch res.StatusCode {
+			case http.StatusNotFound:
+				problemDetails.Status = http.StatusNotFound
+				problemDetails.Cause = userNotFoundError
+			case http.StatusForbidden:
+				problemDetails.Status = http.StatusForbidden
+				problemDetails.Cause = authenticationRejected
+			default:
+				problemDetails.Status = http.StatusInternalServerError
+				problemDetails.Cause = authenticationRejected
+			}
+		} else {
+			problemDetails.Status = http.StatusForbidden
+			problemDetails.Cause = authenticationRejected
 		}
-
 		logger.UeauLog.Errorln("return from UDR QueryAuthSubsData error")
-		return nil, problemDetails
+		return nil, &problemDetails
 	}
 	defer func() {
 		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
