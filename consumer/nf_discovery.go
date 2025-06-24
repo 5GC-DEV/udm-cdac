@@ -35,14 +35,17 @@ var SendSearchNFInstances = func(nrfUri string, targetNfType, requestNfType mode
 	models.SearchResult, error,
 ) {
 	if udmContext.UDM_Self().EnableNrfCaching {
+		logger.ConsumerLog.Info("---NrfCaching enabled so search from nrfcache")
 		return NRFCacheSearchNFInstances(nrfUri, targetNfType, requestNfType, param)
 	} else {
+		logger.ConsumerLog.Info("---not enabled so send nfdiscovery to nrf")
 		return SendNfDiscoveryToNrf(nrfUri, targetNfType, requestNfType, param)
 	}
 }
 
 var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType models.NfType, param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts,
 ) (models.SearchResult, error) {
+	logger.ConsumerLog.Info("---in SendNfDiscoveryToNrf")
 	// Set client and set url
 	configuration := Nnrf_NFDiscovery.NewConfiguration()
 	configuration.SetBasePath(nrfUri)
@@ -63,17 +66,22 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 	for _, nfProfile := range result.NfInstances {
 		// checking whether the UDM subscribed to this target nfinstanceid or not
 		if _, ok := udmSelf.NfStatusSubscriptions.Load(nfProfile.NfInstanceId); !ok {
+			logger.ConsumerLog.Info("---UDM not subscribed to this target nfinstanceid, not ok")
 			nrfSubscriptionData := models.NrfSubscriptionData{
 				NfStatusNotificationUri: fmt.Sprintf("%s/nudm-callback/v1/nf-status-notify", udmSelf.GetIPv4Uri()),
 				SubscrCond:              &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
 				ReqNfType:               requesterNfType,
 			}
+			// by cdac to test and verify
+			nfstnoturi := fmt.Sprintf("%s/nudm-callback/v1/nf-status-notify", udmSelf.GetIPv4Uri())
+			logger.ConsumerLog.Info("---nfstnoturi: ", nfstnoturi)
 			nrfSubData, problemDetails, err = CreateSubscription(nrfUri, nrfSubscriptionData)
 			if problemDetails != nil {
 				logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
 			} else if err != nil {
 				logger.ConsumerLog.Errorf("SendCreateSubscription Error[%+v]", err)
 			}
+			logger.ConsumerLog.Info("---nrfSubData.SubscriptionId: ", nrfSubData.SubscriptionId)
 			udmSelf.NfStatusSubscriptions.Store(nfProfile.NfInstanceId, nrfSubData.SubscriptionId)
 		}
 	}
