@@ -251,6 +251,7 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 	// TS 23.502 4.2.2.2.2 14d: UDM initiate a Nudm_UECM_DeregistrationNotification to the old AMF
 	// corresponding to the same (e.g. 3GPP) access, if one exists
 	if oldAmf3GppAccessRegContext != nil {
+		logger.ProducerLog.Info("---oldAmf3GppAccessRegContext not nil")
 		deregistData := models.DeregistrationData{
 			DeregReason: models.DeregistrationReason_SUBSCRIPTION_WITHDRAWN,
 			AccessType:  models.AccessType__3_GPP_ACCESS,
@@ -260,6 +261,7 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 
 		return nil, nil, nil
 	} else {
+		logger.ProducerLog.Info("---oldAmf3GppAccessRegContext nil")
 		header = make(http.Header)
 		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriAmf3GppAccessRegistration))
