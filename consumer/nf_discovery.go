@@ -61,7 +61,8 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 	}()
 
 	udmSelf := udmContext.UDM_Self()
-	logger.ConsumerLog.Info("udmself: ", udmSelf.NrfUri)
+	logger.ConsumerLog.Info("udmself nrfuri: ", udmSelf.NrfUri)
+	logger.ConsumerLog.Info("udmself nfid: ", udmSelf.NfId)
 	// var nrfSubData models.NrfSubscriptionData
 	// var problemDetails *models.ProblemDetails
 	// for _, nfProfile := range result.NfInstances {

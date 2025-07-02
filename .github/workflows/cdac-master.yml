@@ -95,8 +95,8 @@ jobs:
         run: go test ./...
   docker-build-push-images:
     runs-on: ubuntu-latest
-    if: github.repository_owner == '5GC-DEV'
-    needs: unit-tests
+    # if: github.repository_owner == '5GC-DEV'
+    # needs: unit-tests
     
     env:
       REGISTRY: docker.io
