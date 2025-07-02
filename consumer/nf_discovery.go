@@ -60,31 +60,31 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 		}
 	}()
 
-	udmSelf := udmContext.UDM_Self()
-	var nrfSubData models.NrfSubscriptionData
-	var problemDetails *models.ProblemDetails
-	for _, nfProfile := range result.NfInstances {
-		// checking whether the UDM subscribed to this target nfinstanceid or not
-		if _, ok := udmSelf.NfStatusSubscriptions.Load(nfProfile.NfInstanceId); !ok {
-			logger.ConsumerLog.Info("---UDM not subscribed to this target nfinstanceid, not ok")
-			nrfSubscriptionData := models.NrfSubscriptionData{
-				NfStatusNotificationUri: fmt.Sprintf("%s/nudm-callback/v1/nf-status-notify", udmSelf.GetIPv4Uri()),
-				SubscrCond:              &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
-				ReqNfType:               requesterNfType,
-			}
-			// by cdac to test and verify
-			nfstnoturi := fmt.Sprintf("%s/nudm-callback/v1/nf-status-notify", udmSelf.GetIPv4Uri())
-			logger.ConsumerLog.Info("---nfstnoturi: ", nfstnoturi)
-			nrfSubData, problemDetails, err = CreateSubscription(nrfUri, nrfSubscriptionData)
-			if problemDetails != nil {
-				logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
-			} else if err != nil {
-				logger.ConsumerLog.Errorf("SendCreateSubscription Error[%+v]", err)
-			}
-			logger.ConsumerLog.Info("---nrfSubData.SubscriptionId: ", nrfSubData.SubscriptionId)
-			udmSelf.NfStatusSubscriptions.Store(nfProfile.NfInstanceId, nrfSubData.SubscriptionId)
-		}
-	}
+	// udmSelf := udmContext.UDM_Self()
+	// var nrfSubData models.NrfSubscriptionData
+	// var problemDetails *models.ProblemDetails
+	// for _, nfProfile := range result.NfInstances {
+	// 	// checking whether the UDM subscribed to this target nfinstanceid or not
+	// 	if _, ok := udmSelf.NfStatusSubscriptions.Load(nfProfile.NfInstanceId); !ok {
+	// 		logger.ConsumerLog.Info("---UDM not subscribed to this target nfinstanceid, not ok")
+	// 		nrfSubscriptionData := models.NrfSubscriptionData{
+	// 			NfStatusNotificationUri: fmt.Sprintf("%s/nudm-callback/v1/nf-status-notify", udmSelf.GetIPv4Uri()),
+	// 			SubscrCond:              &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
+	// 			ReqNfType:               requesterNfType,
+	// 		}
+	// 		// by cdac to test and verify
+	// 		nfstnoturi := fmt.Sprintf("%s/nudm-callback/v1/nf-status-notify", udmSelf.GetIPv4Uri())
+	// 		logger.ConsumerLog.Info("---nfstnoturi: ", nfstnoturi)
+	// 		nrfSubData, problemDetails, err = CreateSubscription(nrfUri, nrfSubscriptionData)
+	// 		if problemDetails != nil {
+	// 			logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
+	// 		} else if err != nil {
+	// 			logger.ConsumerLog.Errorf("SendCreateSubscription Error[%+v]", err)
+	// 		}
+	// 		logger.ConsumerLog.Info("---nrfSubData.SubscriptionId: ", nrfSubData.SubscriptionId)
+	// 		udmSelf.NfStatusSubscriptions.Store(nfProfile.NfInstanceId, nrfSubData.SubscriptionId)
+	// 	}
+	// }
 
 	return result, err
 }
