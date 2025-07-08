@@ -37,7 +37,7 @@ import (
 	"github.com/omec-project/udm/util"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -60,7 +60,7 @@ type (
 var config Config
 
 var udmCLi = []cli.Flag{
-	cli.StringFlag{
+	&cli.StringFlag{
 		Name:     "cfg",
 		Usage:    "udm config file",
 		Required: true,
@@ -76,7 +76,7 @@ func (*UDM) GetCliCmd() (flags []cli.Flag) {
 	return udmCLi
 }
 
-func (udm *UDM) Initialize(c *cli.Context) error {
+func (udm *UDM) Initialize(c *cli.Command) error {
 	config = Config{
 		cfg: c.String("cfg"),
 	}
@@ -122,7 +122,7 @@ func manageGrpcClient(webuiUri string, udm *UDM) {
 	count := 0
 	for {
 		if client != nil {
-			if client.CheckGrpcConnectivity() != "ready" {
+			if client.CheckGrpcConnectivity() != "READY" {
 				time.Sleep(time.Second * 30)
 				count++
 				if count > 5 {
@@ -151,6 +151,8 @@ func manageGrpcClient(webuiUri string, udm *UDM) {
 				go udm.updateConfig(configChannel)
 				logger.InitLog.Infoln("UDM updateConfig is triggered")
 			}
+
+			time.Sleep(time.Second * 5) // Fixes (avoids) 100% CPU utilization
 		} else {
 			client, err = grpcClient.ConnectToConfigServer(webuiUri)
 			stream = nil
@@ -187,9 +189,9 @@ func (udm *UDM) setLogLevel() {
 	}
 }
 
-func (udm *UDM) FilterCli(c *cli.Context) (args []string) {
+func (udm *UDM) FilterCli(c *cli.Command) (args []string) {
 	for _, flag := range udm.GetCliCmd() {
-		name := flag.GetName()
+		name := flag.Names()[0]
 		value := fmt.Sprint(c.Generic(name))
 		if value == "" {
 			continue
@@ -253,10 +255,14 @@ func (udm *UDM) Start() {
 	}
 
 	serverScheme := factory.UdmConfig.Configuration.Sbi.Scheme
-	if serverScheme == "http" {
+	switch serverScheme {
+	case "http":
 		err = server.ListenAndServe()
-	} else if serverScheme == "https" {
+	case "https":
 		err = server.ListenAndServeTLS(sbi.Tls.Pem, sbi.Tls.Key)
+	default:
+		logger.InitLog.Fatalf("HTTP server setup failed: invalid server scheme %+v", serverScheme)
+		return
 	}
 
 	if err != nil {
@@ -264,7 +270,7 @@ func (udm *UDM) Start() {
 	}
 }
 
-func (udm *UDM) Exec(c *cli.Context) error {
+func (udm *UDM) Exec(c *cli.Command) error {
 	// UDM.Initialize(cfgPath, c)
 
 	logger.InitLog.Debugln("args:", c.String("udmcfg"))
@@ -333,7 +339,7 @@ func (udm *UDM) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool
 			logger.GrpcLog.Infoln("network Slice Name", ns.Name)
 			if ns.Site != nil {
 				temp := factory.PlmnSupportItem{}
-				var found bool = false
+				found := false
 				logger.GrpcLog.Infoln("network Slice has site name present ")
 				site := ns.Site
 				logger.GrpcLog.Infoln("site name", site.SiteName)
