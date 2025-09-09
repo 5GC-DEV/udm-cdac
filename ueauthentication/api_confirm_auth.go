@@ -63,6 +63,7 @@ func HTTPConfirmAuth(c *gin.Context) {
 
 	logger.UeauLog.Infof("[HTTPConfirmAuth] Sending response to AUSF. Status: %d", rsp.Status)
 	if rsp.Body != nil {
+		var previewBody []byte
 		previewBody, err := openapi.Serialize(rsp.Body, "application/json")
 		if err == nil {
 			logger.UeauLog.Infof("[HTTPConfirmAuth] Sending response Body to AUSF: %s", string(previewBody))
