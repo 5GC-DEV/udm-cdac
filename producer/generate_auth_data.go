@@ -11,7 +11,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"net/http"
 	"reflect"
@@ -148,9 +148,9 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (problemD
 
 	var bodyBytes []byte
 	if resp != nil && resp.Body != nil {
-		bodyBytes, _ = ioutil.ReadAll(resp.Body)
+		bodyBytes, _ = io.ReadAll(resp.Body)
 		// Restore the io.ReadCloser so the rest of the function can use it
-		resp.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
 	if len(bodyBytes) > 0 {
