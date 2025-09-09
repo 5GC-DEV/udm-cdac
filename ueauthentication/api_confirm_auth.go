@@ -61,6 +61,24 @@ func HTTPConfirmAuth(c *gin.Context) {
 
 	rsp := producer.HandleConfirmAuthDataRequest(req)
 
+	logger.UeauLog.Infof("[HTTPConfirmAuth] Sending response to AUSF. Status: %d", rsp.Status)
+	if rsp.Body != nil {
+		previewBody, err := openapi.Serialize(rsp.Body, "application/json")
+		if err == nil {
+			logger.UeauLog.Infof("[HTTPConfirmAuth] Sending response Body to AUSF: %s", string(previewBody))
+		} else {
+			logger.UeauLog.Errorf("[HTTPConfirmAuth] Error serializing response body for logging: %+v", err)
+		}
+	} else {
+		logger.UeauLog.Warnln("[HTTPConfirmAuth] Sending EMPTY/NULL body to AUSF.")
+	}
+
+	for key, values := range c.Writer.Header() {
+		for _, value := range values {
+			logger.UeauLog.Infof("[HTTPConfirmAuth] Sending Header to AUSF: %s: %s", key, value)
+		}
+	}
+
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
 		logger.UeauLog.Errorln(err)

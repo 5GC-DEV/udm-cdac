@@ -6,10 +6,12 @@
 package producer
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net/http"
 	"reflect"
@@ -131,6 +133,32 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (problemD
 	}
 	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
 		context.Background(), supi, &createAuthParam)
+	if resp != nil {
+		logger.UeauLog.Infof("[ConfirmAuth] Received HTTP status code from UDR: %d", resp.StatusCode)
+	}
+	if resp != nil && resp.Header != nil {
+		for key, values := range resp.Header {
+			for _, value := range values {
+				logger.UeauLog.Infof("[ConfirmAuth] Received Header from UDR: %s: %s", key, value)
+			}
+		}
+	} else {
+		logger.UeauLog.Warnln("[ConfirmAuth] No headers received in UDR response.")
+	}
+
+	var bodyBytes []byte
+	if resp != nil && resp.Body != nil {
+		bodyBytes, _ = ioutil.ReadAll(resp.Body)
+		// Restore the io.ReadCloser so the rest of the function can use it
+		resp.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
+
+	if len(bodyBytes) > 0 {
+		logger.UeauLog.Infof("[ConfirmAuth] Received Body from UDR: %s", string(bodyBytes))
+	} else {
+		logger.UeauLog.Warnln("[ConfirmAuth] Received EMPTY body from UDR.")
+	}
+
 	if err != nil {
 		problemDetails = &models.ProblemDetails{
 			Status: int32(resp.StatusCode),
@@ -138,7 +166,7 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (problemD
 			Detail: err.Error(),
 		}
 
-		logger.UeauLog.Errorln("[ConfirmAuth]", err.Error())
+		logger.UeauLog.Errorln("[ConfirmAuth] UDR returned an error response. Status:", resp.StatusCode)
 		return problemDetails
 	}
 	defer func() {
