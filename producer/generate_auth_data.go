@@ -148,7 +148,11 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (problemD
 
 	var bodyBytes []byte
 	if resp != nil && resp.Body != nil {
-		bodyBytes, _ = io.ReadAll(resp.Body)
+		var readErr error
+		bodyBytes, readErr = io.ReadAll(resp.Body)
+		if readErr != nil {
+			logger.UeauLog.Errorf("[ConfirmAuth] Error reading UDR response body for logging: %+v", readErr)
+		}
 		// Restore the io.ReadCloser so the rest of the function can use it
 		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
