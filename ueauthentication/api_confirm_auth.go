@@ -61,6 +61,17 @@ func HTTPConfirmAuth(c *gin.Context) {
 
 	rsp := producer.HandleConfirmAuthDataRequest(req)
 
+	logger.UeauLog.Infof("[HTTPConfirmAuth] Received response object from producer. Status to be sent: %d", rsp.Status)
+
+    if rsp.Body != nil {
+        // Log a description of the body content from the producer
+        logger.UeauLog.Infof("[HTTPConfirmAuth] Producer response body is of type: %T", rsp.Body)
+        // Using fmt.Sprintf with %+v can give a detailed view of the struct
+        logger.UeauLog.Infof("[HTTPConfirmAuth] Producer response body content (struct view): %+v", rsp.Body)
+    } else {
+        logger.UeauLog.Warnln("[HTTPConfirmAuth] Producer response body is NIL.")
+    }
+
 	logger.UeauLog.Infof("[HTTPConfirmAuth] Sending response to AUSF. Status: %d", rsp.Status)
 	if rsp.Body != nil {
 		var previewBody []byte
@@ -90,6 +101,21 @@ func HTTPConfirmAuth(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
+		// Log the final, serialized JSON body that is about to be sent
+        if len(responseBody) > 0 {
+            logger.UeauLog.Infof("[HTTPConfirmAuth] Sending final serialized JSON response to AUSF: %s", string(responseBody))
+        } else {
+            logger.UeauLog.Warnln("[HTTPConfirmAuth] Sending final serialized response to AUSF is EMPTY.")
+        }
+        
+        // Log the headers one last time right before sending
+        logger.UeauLog.Infoln("[HTTPConfirmAuth] Final headers being sent to AUSF:")
+        for key, values := range c.Writer.Header() {
+            for _, value := range values {
+                 logger.UeauLog.Infof("[HTTPConfirmAuth] --> Header: %s: %s", key, value)
+            }
+        }
+
 		c.Data(rsp.Status, "application/json", responseBody)
 	}
 }
