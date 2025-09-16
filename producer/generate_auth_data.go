@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"github.com/antihax/optional"
-	"github.com/google/uuid"
+	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Nudr_DataRepository"
 	"github.com/omec-project/openapi/models"
 	udm_context "github.com/omec-project/udm/context"
@@ -110,88 +110,77 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 	authEvent := request.Body.(models.AuthEvent)
 	supi := request.Params["supi"]
 
-	header, authEventResp, problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
+	createdEvent, problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
 
 	if problemDetails != nil {
+		logger.UeauLog.Errorf("ConfirmAuthDataProcedure failed for SUPI [%s]: %+v", supi, problemDetails)
 		stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
-	} else {
-		stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
-		logger.UeauLog.Infof("[WORKAROUND] Sending 201 Created to AUSF.")
-		if authEventResp != nil {
-			// Serialize to see the exact JSON being sent
-			bodyBytes, _ := json.Marshal(authEventResp)
-			logger.UeauLog.Infof("[WORKAROUND] Sending response Body to AUSF: %s", string(bodyBytes))
-		}
-		if header != nil {
-			logger.UeauLog.Infof("[WORKAROUND] Sending Location Header to AUSF: %s", header.Get("Location"))
-		}
-		return httpwrapper.NewResponse(http.StatusCreated, header, authEventResp)
 	}
+
+	locationURI := fmt.Sprintf("%s/nudm-ueau/v1/imsi-%s/auth-events/%s",
+		udm_context.UDM_Self().GetIPv4Uri(), supi, createdEvent.AuthEventId)
+
+	headers := http.Header{}
+	headers.Set("Location", locationURI)
+
+	logger.UeauLog.Infof("[HandleConfirmAuth] Sending 201 Created to AUSF for SUPI [%s]", supi)
+	logger.UeauLog.Infof("[HandleConfirmAuth] -> Location Header: %s", locationURI)
+	logger.UeauLog.Infof("[HandleConfirmAuth] -> Response Body: %+v", createdEvent)
+
+	stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
+
+	return httpwrapper.NewResponse(http.StatusCreated, headers, createdEvent)
 }
 
-func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, authEventResp *models.AuthEvent, problemDetails *models.ProblemDetails) {
+func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (*models.AuthEvent, *models.ProblemDetails) {
 	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
 	optInterface := optional.NewInterface(authEvent)
 	createAuthParam.AuthEvent = optInterface
 
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
-		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
+		return nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
+
+	logger.UeauLog.Infof("[ConfirmAuth] Sending CreateAuthenticationStatus to UDR for SUPI [%s]", supi)
 	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
 		context.Background(), supi, &createAuthParam)
 
-	if resp != nil {
-		logger.UeauLog.Infof("[ConfirmAuth] Received HTTP status code from UDR: %d", resp.StatusCode)
-	}
-	if len(resp.Header) > 0 {
-		for key, values := range resp.Header {
-			for _, value := range values {
-				logger.UeauLog.Infof("[ConfirmAuth] Received Header from UDR: %s: %s", key, value)
-			}
-		}
-	} else {
-		logger.UeauLog.Warnln("[ConfirmAuth] No headers received from UDR.")
-	}
-
 	if err != nil {
-		status := int32(http.StatusInternalServerError)
-		cause := "SYSTEM_FAILURE"
 		if resp != nil {
-			status = int32(resp.StatusCode)
+			logger.UeauLog.Errorf("[ConfirmAuth] UDR returned an error. Status: %d, Error: %v", resp.StatusCode, err)
+			problemDetails := &models.ProblemDetails{
+				Status: int32(resp.StatusCode),
+				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+				Detail: err.Error(),
+			}
+			return nil, problemDetails
 		}
-
-		problemDetails = &models.ProblemDetails{
-			Status: status,
-			Cause:  cause,
-			Detail: err.Error(),
-		}
-
-		logger.UeauLog.Errorln("[ConfirmAuth] UDR returned an error response. Status:", resp.StatusCode)
-		return nil, nil, problemDetails
+		logger.UeauLog.Errorf("[ConfirmAuth] Failed to send request to UDR: %v", err)
+		return nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 	defer func() {
 		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
 			logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
 		}
 	}()
-	logger.UeauLog.Warnln("[WORKAROUND] UDR response is 204 No Content. Activating workaround.")
-	tempAuthEventId := uuid.New().String()
-	logger.UeauLog.Infof("[WORKAROUND] Generated temporary authEventId: %s", tempAuthEventId)
-	header = make(http.Header)
-	udmUe, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
-	if !ok {
-		// This is a critical failure if the UE context is gone, handle it.
-		problemDetails = util.ProblemDetailsSystemFailure("UE context not found during workaround")
-		return nil, nil, problemDetails
-	}
-	locationURI := udmUe.GetLocationURI3(udm_context.LocationUriAuthEvent, supi, tempAuthEventId)
-	header.Set("Location", locationURI)
-	logger.UeauLog.Infof("[WORKAROUND] Constructed Location URI: %s", locationURI)
 
-	logger.UeauLog.Infoln("[WORKAROUND] Returning original AuthEvent in response body.")
-	return header, &authEvent, nil
+	logger.UeauLog.Infof("[ConfirmAuth] Received HTTP status code from UDR: %d", resp.StatusCode)
+
+	if resp.StatusCode == http.StatusCreated {
+		var createdEvent models.AuthEvent
+		if err := json.NewDecoder(resp.Body).Decode(&createdEvent); err != nil {
+			logger.UeauLog.Errorf("[ConfirmAuth] Failed to decode 201 response body from UDR: %+v", err)
+			return nil, util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
+		}
+		logger.UeauLog.Infof("[ConfirmAuth] Successfully received and decoded AuthEvent from UDR with ID [%s]", createdEvent.AuthEventId)
+
+		return &createdEvent, nil
+	}
+
+	logger.UeauLog.Errorf("[ConfirmAuth] Received unexpected success status code from UDR: %d", resp.StatusCode)
+	return nil, util.ProblemDetailsSystemFailure("Unexpected Status Code from UDR")
 }
 
 func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest, supiOrSuci string) (
