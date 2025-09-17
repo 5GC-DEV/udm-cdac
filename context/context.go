@@ -30,6 +30,7 @@ const (
 	LocationUriSmfRegistration
 	LocationUriSdmSubscription
 	LocationUriSharedDataSubscription
+	LocationUriAuthEvents
 )
 
 func init() {
@@ -370,6 +371,14 @@ func (ue *UdmUeContext) GetLocationURI2(types int, supi string) string {
 		// return UDM_Self().GetIPv4Uri() + "/nudm-sdm/v1/shared-data-subscriptions/" + nf.SubscriptionID
 	case LocationUriSdmSubscription:
 		return UDM_Self().GetIPv4Uri() + "/nudm-sdm/v1/" + supi + "/sdm-subscriptions/"
+	}
+	return ""
+}
+
+func (ue *UdmUeContext) GetLocationURI3(types int, supi string, authEventId string) string {
+	switch types {
+	case LocationUriAuthEvents:
+		return UDM_Self().GetIPv4Uri() + "/nudm-ueau/v1/" + supi + "/auth-events/" + authEventId
 	}
 	return ""
 }
