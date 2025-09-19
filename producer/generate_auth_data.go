@@ -143,9 +143,7 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (http.Hea
 	}
 
 	logger.UeauLog.Infof("[ConfirmAuth] Sending CreateAuthenticationStatus to UDR for SUPI [%s]", supi)
-	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
-		context.Background(), supi, &createAuthParam)
-
+	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(context.Background(), supi, &createAuthParam)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusCreated {
 			logger.UeauLog.Infof("[ConfirmAuth] Received HTTP status 201 from UDR, processing as success.")
