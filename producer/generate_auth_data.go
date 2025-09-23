@@ -160,7 +160,7 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header h
 
 		ue.LastAuthenticationEvent = &createdEvent
 
-		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, "imsi-"+supi, createdEvent.AuthEventId)
+		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
 		header = make(http.Header)
 		header.Set("Location", locationURI)
 		response = &createdEvent
