@@ -20,6 +20,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/udm/logger"
+	"github.com/omec-project/udm/producer"
+	"github.com/omec-project/util/httpwrapper"
 	utilLogger "github.com/omec-project/util/logger"
 )
 
@@ -79,6 +81,17 @@ func AddService(engine *gin.Engine) *gin.RouterGroup {
 	return group
 }
 
+func HTTPDeleteAuth(c *gin.Context) {
+	req := httpwrapper.NewRequest(c.Request, nil)
+	req.Params["supi"] = c.Params.ByName("supi")
+	req.Params["authEventId"] = c.Params.ByName("authEventId")
+
+	rsp := producer.HandleDeleteAuthRequest(req)
+
+	// A successful 204 response has no body.
+	c.Status(rsp.Status)
+}
+
 // Index is the index handler.
 func Index(c *gin.Context) {
 	c.String(http.StatusOK, "Hello World!")
@@ -97,5 +110,12 @@ var routes = Routes{
 		strings.ToUpper("Post"),
 		"/:supi/auth-events",
 		HTTPConfirmAuth,
+	},
+
+	{
+		"DeleteAuth",
+		"PUT",
+		"/imsi-{supi}/auth-events/{authEventId}",
+		HTTPDeleteAuth,
 	},
 }

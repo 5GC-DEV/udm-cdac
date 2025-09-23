@@ -79,6 +79,7 @@ type UdmUeContext struct {
 	PduSessionID                      string
 	UdrUri                            string
 	UdmSubsToNotify                   map[string]*models.SubscriptionDataSubscriptions
+	LastAuthenticationEvent           *models.AuthEvent
 	EeSubscriptions                   map[string]*models.EeSubscription // subscriptionID as key
 	TraceDataResponse                 models.TraceDataResponse
 	amSubsDataLock                    sync.Mutex
@@ -375,7 +376,7 @@ func (ue *UdmUeContext) GetLocationURI2(types int, supi string) string {
 	return ""
 }
 
-func (ue *UdmUeContext) GetLocationURI3(types int, supi string, authEventId string) string {
+func (context *UDMContext) GetLocationURI3(types int, supi string, authEventId string) string {
 	switch types {
 	case LocationUriAuthEvents:
 		return UDM_Self().GetIPv4Uri() + "/nudm-ueau/v1/" + supi + "/auth-events/" + authEventId

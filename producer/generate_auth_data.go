@@ -116,71 +116,70 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 		logger.UeauLog.Infof("[HandleConfirmAuth] Sending 201 Created to AUSF for SUPI [%s]", supi)
 		logger.UeauLog.Infof("[HandleConfirmAuth] -> Location Header: %s", header.Get("Location"))
 		logger.UeauLog.Infof("[HandleConfirmAuth] -> Response Body: %+v", response)
-
 		stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
-	}
-
-	if problemDetails != nil {
+	} else if problemDetails != nil {
 		stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 
-	// This fallback case should be unreachable but is kept for safety.
 	stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
-func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (http.Header, *models.AuthEvent, *models.ProblemDetails) {
+func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, response *models.AuthEvent, problemDetails *models.ProblemDetails) {
 	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
 	optInterface := optional.NewInterface(authEvent)
 	createAuthParam.AuthEvent = optInterface
 
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
-		problemDetails := util.ProblemDetailsSystemFailure(err.Error())
-		return nil, nil, problemDetails
+		problemDetails = util.ProblemDetailsSystemFailure(err.Error())
+		return
 	}
 
 	logger.UeauLog.Infof("[ConfirmAuth] Sending CreateAuthenticationStatus to UDR for SUPI [%s]", supi)
-	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(context.Background(), supi, &createAuthParam)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusCreated {
-			logger.UeauLog.Infof("[ConfirmAuth] Received HTTP status 201 from UDR, processing as success.")
-			var createdEvent models.AuthEvent
-			if decodeErr := json.Unmarshal(err.(openapi.GenericOpenAPIError).Body(), &createdEvent); decodeErr != nil {
-				logger.UeauLog.Errorf("[ConfirmAuth] Failed to decode 201 response body from UDR error: %+v", decodeErr)
-				problemDetails := util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
-				return nil, nil, problemDetails
-			}
-			logger.UeauLog.Infof("[ConfirmAuth] Successfully received and decoded AuthEvent from UDR with ID [%s]", createdEvent.AuthEventId)
+	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
+		context.Background(), supi, &createAuthParam)
 
-			ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
-			if !ok {
-				logger.UeauLog.Errorf("Could not find UE context for SUPI [%s] after auth confirmation", supi)
-				problemDetails := util.ProblemDetailsSystemFailure("UE Context not found")
-				return nil, nil, problemDetails
-			}
+	if err != nil && resp != nil && resp.StatusCode == http.StatusCreated {
+		logger.UeauLog.Infof("[ConfirmAuth] Received HTTP status 201 from UDR, processing as success.")
+		var createdEvent models.AuthEvent
+		if decodeErr := json.Unmarshal(err.(openapi.GenericOpenAPIError).Body(), &createdEvent); decodeErr != nil {
+			logger.UeauLog.Errorf("[ConfirmAuth] Failed to decode 201 response body from UDR error: %+v", decodeErr)
+			problemDetails = util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
+			return
+		}
+		logger.UeauLog.Infof("[ConfirmAuth] Successfully received and decoded AuthEvent from UDR with ID [%s]", createdEvent.AuthEventId)
 
-			locationURI := ue.GetLocationURI3(udm_context.LocationUriAuthEvents, "imsi-"+supi, createdEvent.AuthEventId)
-			header := make(http.Header)
-			header.Set("Location", locationURI)
-			return header, &createdEvent, nil // Explicit success return
+		ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
+		if !ok {
+			logger.UeauLog.Warnf("UE context not found for SUPI [%s], creating a new one.", supi)
+			ue = udm_context.UDM_Self().NewUdmUe(supi)
 		}
 
+		ue.LastAuthenticationEvent = &createdEvent
+
+		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, "imsi-"+supi, createdEvent.AuthEventId)
+		header = make(http.Header)
+		header.Set("Location", locationURI)
+		response = &createdEvent
+		return
+	}
+
+	if err != nil {
 		if resp != nil {
 			logger.UeauLog.Errorf("[ConfirmAuth] UDR returned an unhandled error. Status: %d, Error: %v", resp.StatusCode, err)
-			problemDetails := &models.ProblemDetails{
+			problemDetails = &models.ProblemDetails{
 				Status: int32(resp.StatusCode),
 				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
 				Detail: err.Error(),
 			}
-			return nil, nil, problemDetails
 		} else {
 			logger.UeauLog.Errorf("[ConfirmAuth] Failed to send request to UDR: %v", err)
-			problemDetails := util.ProblemDetailsSystemFailure(err.Error())
-			return nil, nil, problemDetails
+			problemDetails = util.ProblemDetailsSystemFailure(err.Error())
 		}
+		return
 	}
 
 	defer func() {
@@ -190,8 +189,8 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (http.Hea
 	}()
 
 	logger.UeauLog.Errorf("[ConfirmAuth] Received unexpected success status code from UDR: %d", resp.StatusCode)
-	problemDetails := util.ProblemDetailsSystemFailure("Unexpected Status Code from UDR")
-	return nil, nil, problemDetails
+	problemDetails = util.ProblemDetailsSystemFailure("Unexpected Status Code from UDR")
+	return
 }
 
 func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest, supiOrSuci string) (
@@ -602,4 +601,51 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	response.AuthenticationVector = &av
 	response.Supi = supi
 	return response, nil
+}
+
+func HandleDeleteAuthRequest(request *httpwrapper.Request) *httpwrapper.Response {
+	logger.UeauLog.Infoln("Handle DeleteAuthRequest")
+
+	supi := request.Params["supi"]
+	authEventId := request.Params["authEventId"]
+
+	problemDetails := DeleteAuthProcedure(supi, authEventId)
+
+	if problemDetails != nil {
+		stats.IncrementUdmUeAuthenticationStats("delete", "FAILURE")
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+	}
+
+	stats.IncrementUdmUeAuthenticationStats("delete", "SUCCESS")
+	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
+}
+
+func DeleteAuthProcedure(supi string, authEventId string) (problemDetails *models.ProblemDetails) {
+	ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
+	if !ok || ue.LastAuthenticationEvent == nil {
+		logger.UeauLog.Warnf("No AuthEvent context found for SUPI [%s] during deletion request.", supi)
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusNotFound,
+			Cause:  "CONTEXT_NOT_FOUND",
+		}
+		return problemDetails
+	}
+
+	if ue.LastAuthenticationEvent.AuthEventId != authEventId {
+		logger.UeauLog.Warnf("authEventId mismatch for SUPI [%s]. Requested: %s, Stored: %s", supi, authEventId, ue.LastAuthenticationEvent.AuthEventId)
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusNotFound,
+			Cause:  "NOT_FOUND",
+			Detail: "The requested authEventId does not match the last known event.",
+		}
+		return problemDetails
+	}
+
+	logger.UeauLog.Infof("Successfully validated authEventId [%s] for SUPI [%s].", authEventId, supi)
+
+	// Invalidate the stored event so it cannot be deleted again.
+	ue.LastAuthenticationEvent = nil
+	logger.UeauLog.Infof("Authentication event removed from UDM context for SUPI [%s].", supi)
+
+	return nil // Success
 }
