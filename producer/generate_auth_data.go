@@ -604,25 +604,28 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 }
 
 func HandleDeleteAuthRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	logger.UeauLog.Infoln("Handle DeleteAuthRequest")
+	logger.UeauLog.Infoln("--- Enter HandleDeleteAuthRequest ---")
 
 	supi := request.Params["supi"]
 	authEventId := request.Params["authEventId"]
+	logger.UeauLog.Infof("Handler received SUPI [%s] and AuthEventId [%s]", supi, authEventId)
 
 	problemDetails := DeleteAuthProcedure(supi, authEventId)
 
 	if problemDetails != nil {
-		logger.UeauLog.Warnf("DeleteAuthProcedure for SUPI [%s] failed: %+v", supi, problemDetails)
+		logger.UeauLog.Warnf("DeleteAuthProcedure failed for SUPI [%s]: %+v", supi, problemDetails)
 		stats.IncrementUdmUeAuthenticationStats("delete", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 
-	logger.UeauLog.Infof("DeleteAuthProcedure for SUPI [%s] successful.", supi)
+	logger.UeauLog.Infof("DeleteAuthProcedure for SUPI [%s] successful. Preparing 204 No Content.", supi)
 	stats.IncrementUdmUeAuthenticationStats("delete", "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
 func DeleteAuthProcedure(supi string, authEventId string) (problemDetails *models.ProblemDetails) {
+	logger.UeauLog.Infoln("--- Enter DeleteAuthProcedure ---")
+
 	ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
 	if !ok || ue.LastAuthenticationEvent == nil {
 		logger.UeauLog.Warnf("No AuthEvent context found for SUPI [%s] during deletion request.", supi)
@@ -631,9 +634,10 @@ func DeleteAuthProcedure(supi string, authEventId string) (problemDetails *model
 			Cause:  "CONTEXT_NOT_FOUND",
 		}
 	}
+	logger.UeauLog.Infof("Found UE Context for SUPI [%s]. Stored AuthEventId is [%s]", supi, ue.LastAuthenticationEvent.AuthEventId)
 
 	if ue.LastAuthenticationEvent.AuthEventId != authEventId {
-		logger.UeauLog.Warnf("authEventId mismatch for SUPI [%s]. Requested: %s, Stored: %s", supi, authEventId, ue.LastAuthenticationEvent.AuthEventId)
+		logger.UeauLog.Warnf("authEventId mismatch for SUPI [%s]. Requested: [%s], Stored: [%s]", supi, authEventId, ue.LastAuthenticationEvent.AuthEventId)
 		return &models.ProblemDetails{
 			Status: http.StatusNotFound,
 			Cause:  "NOT_FOUND",

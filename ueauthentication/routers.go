@@ -82,12 +82,19 @@ func AddService(engine *gin.Engine) *gin.RouterGroup {
 }
 
 func HTTPDeleteAuth(c *gin.Context) {
+	supiParam := c.Params.ByName("supi")
+	authEventIdParam := c.Params.ByName("authEventId")
+	logger.UeauLog.Infof(">>>>> HTTP Inbound: Received PUT request for Auth Event deletion.")
+	logger.UeauLog.Infof(">>>>> Path parameter supi: [%s]", supiParam)
+	logger.UeauLog.Infof(">>>>> Path parameter authEventId: [%s]", authEventIdParam)
+
 	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["supi"] = c.Params.ByName("supi")
 	req.Params["authEventId"] = c.Params.ByName("authEventId")
 
 	rsp := producer.HandleDeleteAuthRequest(req)
 
+	logger.UeauLog.Infof("<<<<< HTTP Outbound: Sending response with status code: %d", rsp.Status)
 	// A successful 204 response has no body.
 	c.Status(rsp.Status)
 }
