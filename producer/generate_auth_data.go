@@ -612,10 +612,12 @@ func HandleDeleteAuthRequest(request *httpwrapper.Request) *httpwrapper.Response
 	problemDetails := DeleteAuthProcedure(supi, authEventId)
 
 	if problemDetails != nil {
+		logger.UeauLog.Warnf("DeleteAuthProcedure for SUPI [%s] failed: %+v", supi, problemDetails)
 		stats.IncrementUdmUeAuthenticationStats("delete", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 
+	logger.UeauLog.Infof("DeleteAuthProcedure for SUPI [%s] successful.", supi)
 	stats.IncrementUdmUeAuthenticationStats("delete", "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
@@ -624,26 +626,23 @@ func DeleteAuthProcedure(supi string, authEventId string) (problemDetails *model
 	ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
 	if !ok || ue.LastAuthenticationEvent == nil {
 		logger.UeauLog.Warnf("No AuthEvent context found for SUPI [%s] during deletion request.", supi)
-		problemDetails = &models.ProblemDetails{
+		return &models.ProblemDetails{
 			Status: http.StatusNotFound,
 			Cause:  "CONTEXT_NOT_FOUND",
 		}
-		return problemDetails
 	}
 
 	if ue.LastAuthenticationEvent.AuthEventId != authEventId {
 		logger.UeauLog.Warnf("authEventId mismatch for SUPI [%s]. Requested: %s, Stored: %s", supi, authEventId, ue.LastAuthenticationEvent.AuthEventId)
-		problemDetails = &models.ProblemDetails{
+		return &models.ProblemDetails{
 			Status: http.StatusNotFound,
 			Cause:  "NOT_FOUND",
 			Detail: "The requested authEventId does not match the last known event.",
 		}
-		return problemDetails
 	}
 
 	logger.UeauLog.Infof("Successfully validated authEventId [%s] for SUPI [%s].", authEventId, supi)
 
-	// Invalidate the stored event so it cannot be deleted again.
 	ue.LastAuthenticationEvent = nil
 	logger.UeauLog.Infof("Authentication event removed from UDM context for SUPI [%s].", supi)
 

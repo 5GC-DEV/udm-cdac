@@ -115,7 +115,7 @@ var routes = Routes{
 	{
 		"DeleteAuth",
 		"PUT",
-		"/imsi-{supi}/auth-events/{authEventId}",
+		"/:supi/auth-events/:authEventId",
 		HTTPDeleteAuth,
 	},
 }
