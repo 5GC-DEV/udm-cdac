@@ -154,7 +154,7 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header h
 
 		ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
 		if !ok {
-			logger.UeauLog.Warnf("UE context not found for SUPI [%s], creating a new one.", supi)
+			logger.UeauLog.Infof("Storing AuthEvent with ID [%s] in context for SUPI [%s]", createdEvent.AuthEventId, supi)
 			ue = udm_context.UDM_Self().NewUdmUe(supi)
 		}
 
@@ -634,7 +634,9 @@ func DeleteAuthProcedure(supi string, authEventId string) (problemDetails *model
 			Cause:  "CONTEXT_NOT_FOUND",
 		}
 	}
-	logger.UeauLog.Infof("Found UE Context for SUPI [%s]. Stored AuthEventId is [%s]", supi, ue.LastAuthenticationEvent.AuthEventId)
+	logger.UeauLog.Infof("Found UE Context for SUPI [%s]. Comparing IDs...", supi)
+	logger.UeauLog.Infof("... Received ID: [%s]", authEventId)
+	logger.UeauLog.Infof("... Stored ID:   [%s]", ue.LastAuthenticationEvent.AuthEventId)
 
 	if ue.LastAuthenticationEvent.AuthEventId != authEventId {
 		logger.UeauLog.Warnf("authEventId mismatch for SUPI [%s]. Requested: [%s], Stored: [%s]", supi, authEventId, ue.LastAuthenticationEvent.AuthEventId)
@@ -644,7 +646,6 @@ func DeleteAuthProcedure(supi string, authEventId string) (problemDetails *model
 			Detail: "The requested authEventId does not match the last known event.",
 		}
 	}
-
 	logger.UeauLog.Infof("Successfully validated authEventId [%s] for SUPI [%s].", authEventId, supi)
 
 	ue.LastAuthenticationEvent = nil

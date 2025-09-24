@@ -61,6 +61,7 @@ func AddService(engine *gin.Engine) *gin.RouterGroup {
 	group := engine.Group("/nudm-ueau/v1")
 
 	for _, route := range routes {
+		logger.GinLog.Infof("Registering Route: Method=[%s], Path=[%s]", route.Method, group.BasePath()+route.Pattern)
 		switch route.Method {
 		case "GET":
 			group.GET(route.Pattern, route.HandlerFunc)
@@ -84,7 +85,7 @@ func AddService(engine *gin.Engine) *gin.RouterGroup {
 func HTTPDeleteAuth(c *gin.Context) {
 	supiParam := c.Params.ByName("supi")
 	authEventIdParam := c.Params.ByName("authEventId")
-	logger.UeauLog.Infof(">>>>> HTTP Inbound: Received PUT request for Auth Event deletion.")
+	logger.UeauLog.Infof(">>>>> HTTP Inbound: Matched route for Auth Event deletion.") // Changed log message
 	logger.UeauLog.Infof(">>>>> Path parameter supi: [%s]", supiParam)
 	logger.UeauLog.Infof(">>>>> Path parameter authEventId: [%s]", authEventIdParam)
 
