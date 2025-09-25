@@ -60,8 +60,10 @@ func genAuthDataHandlerFunc(c *gin.Context) {
 func AddService(engine *gin.Engine) *gin.RouterGroup {
 	group := engine.Group("/nudm-ueau/v1")
 
+	logger.InitLog.Info("--- Registering Nudm_UEAU Service Routes ---")
 	for _, route := range routes {
 		logger.GinLog.Infof("Registering Route: Method=[%s], Path=[%s]", route.Method, group.BasePath()+route.Pattern)
+		logger.InitLog.Infof("=> Route: [%s], Method: [%s], Path: [%s]", route.Name, route.Method, group.BasePath()+route.Pattern)
 		switch route.Method {
 		case "GET":
 			group.GET(route.Pattern, route.HandlerFunc)
@@ -75,29 +77,12 @@ func AddService(engine *gin.Engine) *gin.RouterGroup {
 			group.PATCH(route.Pattern, route.HandlerFunc)
 		}
 	}
+	logger.InitLog.Info("--- Nudm_UEAU Route Registration Complete ---")
 
 	genAuthDataPath := "/:supi/security-information/generate-auth-data"
 	group.Any(genAuthDataPath, genAuthDataHandlerFunc)
 
 	return group
-}
-
-func HTTPDeleteAuth(c *gin.Context) {
-	supiParam := c.Params.ByName("supi")
-	authEventIdParam := c.Params.ByName("authEventId")
-	logger.UeauLog.Infof(">>>>> HTTP Inbound: Matched route for Auth Event deletion.") // Changed log message
-	logger.UeauLog.Infof(">>>>> Path parameter supi: [%s]", supiParam)
-	logger.UeauLog.Infof(">>>>> Path parameter authEventId: [%s]", authEventIdParam)
-
-	req := httpwrapper.NewRequest(c.Request, nil)
-	req.Params["supi"] = c.Params.ByName("supi")
-	req.Params["authEventId"] = c.Params.ByName("authEventId")
-
-	rsp := producer.HandleDeleteAuthRequest(req)
-
-	logger.UeauLog.Infof("<<<<< HTTP Outbound: Sending response with status code: %d", rsp.Status)
-	// A successful 204 response has no body.
-	c.Status(rsp.Status)
 }
 
 // Index is the index handler.
@@ -126,4 +111,22 @@ var routes = Routes{
 		"/:supi/auth-events/:authEventId",
 		HTTPDeleteAuth,
 	},
+}
+
+func HTTPDeleteAuth(c *gin.Context) {
+	supiParam := c.Params.ByName("supi")
+	authEventIdParam := c.Params.ByName("authEventId")
+	logger.UeauLog.Infof(">>>>> HTTP Inbound: Matched route for Auth Event deletion.") // Changed log message
+	logger.UeauLog.Infof(">>>>> Path parameter supi: [%s]", supiParam)
+	logger.UeauLog.Infof(">>>>> Path parameter authEventId: [%s]", authEventIdParam)
+
+	req := httpwrapper.NewRequest(c.Request, nil)
+	req.Params["supi"] = c.Params.ByName("supi")
+	req.Params["authEventId"] = c.Params.ByName("authEventId")
+
+	rsp := producer.HandleDeleteAuthRequest(req)
+
+	logger.UeauLog.Infof("<<<<< HTTP Outbound: Sending response with status code: %d", rsp.Status)
+	// A successful 204 response has no body.
+	c.Status(rsp.Status)
 }
