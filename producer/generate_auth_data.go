@@ -300,10 +300,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 					hasOP = true
 				}
 			} else {
-				problemDetails = &models.ProblemDetails{
-					Status: http.StatusForbidden,
-					Cause:  authenticationRejected,
-					Detail: fmt.Sprintf("Invalid OP length: expected %d, got %d", opStrLen, len(opStr)),
+					logger.UeauLog.Errorln("opStr length is", len(opStr))
 				}
 				logger.UeauLog.Errorln(problemDetails.Detail)
 				return nil, problemDetails
@@ -312,9 +309,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 			logger.UeauLog.Infoln("Nil Op")
 		}
 	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
+			logger.UeauLog.Errorln("opStr length is", len(opStr))
 		}
 
 		logger.UeauLog.Infoln("Nil Milenage")
