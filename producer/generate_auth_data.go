@@ -161,9 +161,8 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header h
 		ue.LastAuthenticationEvent = &createdEvent
 
 		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
-		header = http.Header{
-			"Location": {locationURI},
-		}
+		header = make(http.Header)
+		header.Set("Location", locationURI)
 		response = &createdEvent
 		return
 	}
@@ -300,7 +299,10 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 					hasOP = true
 				}
 			} else {
-				logger.UeauLog.Errorln("opStr length is", len(opStr))
+				problemDetails = &models.ProblemDetails{
+					Status: http.StatusForbidden,
+					Cause:  authenticationRejected,
+					Detail: fmt.Sprintf("Invalid OP length: expected %d, got %d", opStrLen, len(opStr)),
 				}
 				logger.UeauLog.Errorln(problemDetails.Detail)
 				return nil, problemDetails
@@ -309,10 +311,11 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 			logger.UeauLog.Infoln("Nil Op")
 		}
 	} else {
-			problemDetails = &models.ProblemDetails{
+		problemDetails = &models.ProblemDetails{
 			Status: http.StatusForbidden,
 			Cause:  authenticationRejected,
 		}
+
 		logger.UeauLog.Infoln("Nil Milenage")
 		return nil, problemDetails
 	}
@@ -327,7 +330,13 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 				hasOPC = true
 			}
 		} else {
-			logger.UeauLog.Errorln("opStr length is", len(opStr))
+			problemDetails = &models.ProblemDetails{
+				Status: http.StatusForbidden,
+				Cause:  authenticationRejected,
+				Detail: fmt.Sprintf("Invalid OPC length: expected %d, got %d", opcStrLen, len(opcStr)),
+			}
+			logger.UeauLog.Errorln(problemDetails.Detail)
+			return nil, problemDetails
 		}
 	} else {
 		logger.UeauLog.Infoln("Nil Opc")
