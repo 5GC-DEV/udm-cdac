@@ -300,7 +300,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 					hasOP = true
 				}
 			} else {
-					logger.UeauLog.Errorln("opStr length is", len(opStr))
+				logger.UeauLog.Errorln("opStr length is", len(opStr))
 				}
 				logger.UeauLog.Errorln(problemDetails.Detail)
 				return nil, problemDetails
@@ -309,9 +309,10 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 			logger.UeauLog.Infoln("Nil Op")
 		}
 	} else {
-			logger.UeauLog.Errorln("opStr length is", len(opStr))
+			problemDetails = &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
 		}
-
 		logger.UeauLog.Infoln("Nil Milenage")
 		return nil, problemDetails
 	}
@@ -326,13 +327,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 				hasOPC = true
 			}
 		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: http.StatusForbidden,
-				Cause:  authenticationRejected,
-				Detail: fmt.Sprintf("Invalid OPC length: expected %d, got %d", opcStrLen, len(opcStr)),
-			}
-			logger.UeauLog.Errorln(problemDetails.Detail)
-			return nil, problemDetails
+			logger.UeauLog.Errorln("opStr length is", len(opStr))
 		}
 	} else {
 		logger.UeauLog.Infoln("Nil Opc")
