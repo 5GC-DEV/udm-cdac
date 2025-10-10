@@ -15,7 +15,6 @@
 package ueauthentication
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -60,8 +59,7 @@ func HTTPConfirmAuth(c *gin.Context) {
 	req := httpwrapper.NewRequest(c.Request, authEvent)
 	req.Params["supi"] = c.Params.ByName("supi")
 
-	rsp := producer.HandleConfirmAuthDataRequest(req, c) // <-- MODIFIED LINE
-	//rsp := producer.HandleConfirmAuthDataRequest(req)
+	rsp := producer.HandleConfirmAuthDataRequest(req)
 
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
