@@ -27,7 +27,7 @@ import (
 )
 
 // ConfirmAuth - Create a new confirmation event
-/*func HTTPConfirmAuth(c *gin.Context) {
+func HTTPConfirmAuth(c *gin.Context) {
 	var authEvent models.AuthEvent
 	// step 1: retrieve http request body
 	requestBody, err := c.GetRawData()
@@ -60,7 +60,8 @@ import (
 	req := httpwrapper.NewRequest(c.Request, authEvent)
 	req.Params["supi"] = c.Params.ByName("supi")
 
-	rsp := producer.HandleConfirmAuthDataRequest(req)
+	rsp := producer.HandleConfirmAuthDataRequest(req, c) // <-- MODIFIED LINE
+	//rsp := producer.HandleConfirmAuthDataRequest(req)
 
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
@@ -74,30 +75,4 @@ import (
 	} else {
 		c.Data(rsp.Status, "application/json", responseBody)
 	}
-}*/
-
-func HTTPConfirmAuth(c *gin.Context) {
-	logger.UeauLog.Warnln("--- RUNNING TEMPORARY HARDCODED HANDLER FOR HTTPConfirmAuth ---")
-
-	// Manually create a dummy response body.
-	dummyEvent := models.AuthEvent{
-		Success:            true,
-		AuthEventId:        "hardcoded-uuid-for-testing", // This field exists in your patched model
-		NfInstanceId:       "d5ddcd4e-7ab8-4b22-9275-08b364c70749",
-		AuthType:           models.AuthType__5_G_AKA,
-		ServingNetworkName: "5G:mnc093.mcc208.3gppnetwork.org",
-	}
-
-	// Manually create the Location header URI.
-	supi := c.Params.ByName("supi")
-	locationURI := fmt.Sprintf("https://udm:29503/nudm-ueau/v1/%s/auth-events/%s", supi, dummyEvent.AuthEventId)
-	
-	logger.UeauLog.Infof("Hardcoded Test: Attempting to set Location header to: [%s]", locationURI)
-	
-	// Use raw Gin functions to set the header and send the response.
-	// This completely bypasses the producer and the httpwrapper.
-	c.Header("Location", locationURI)
-	c.JSON(http.StatusCreated, dummyEvent)
-	
-	logger.UeauLog.Warnf("--- FINISHED TEMPORARY HARDCODED HANDLER. Final response headers sent by Gin: %+v", c.Writer.Header())
 }
