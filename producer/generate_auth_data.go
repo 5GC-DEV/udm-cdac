@@ -113,6 +113,9 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 	header, response, problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
 
 	if response != nil {
+		// Manually write the Location header directly to the underlying response writer.
+        c.Header("Location", header.Get("Location"))
+        logger.UeauLog.Infof("Forcefully set Location header directly via Gin context.")
 		logger.UeauLog.Infof("[HandleConfirmAuth] Sending 201 Created to AUSF for SUPI [%s]", supi)
 		logger.UeauLog.Infof("[HandleConfirmAuth] -> Location Header: %s", header.Get("Location"))
 		logger.UeauLog.Infof("[HandleConfirmAuth] -> Response Body: %+v", response)
