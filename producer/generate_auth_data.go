@@ -106,6 +106,16 @@ func HandleGenerateAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Re
 
 func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UeauLog.Infoln("Handle ConfirmAuthDataRequest")
+	// --- THIS IS A HACK FOR DIAGNOSIS ---
+	// We need to get the original Gin context. The httpwrapper stores it.
+	ginContext, ok := request.Context.Value("gin-context").(*gin.Context)
+	if !ok {
+		logger.UeauLog.Errorln("FATAL: Could not retrieve gin.Context from httpwrapper.")
+		// Return an error so the test fails in a new, obvious way if this happens
+		problemDetails := &models.ProblemDetails{Status: 500, Cause: "GIN_CONTEXT_MISSING"}
+		return httpwrapper.NewResponse(500, nil, problemDetails)
+	}
+	// ------------------------------------
 
 	authEvent := request.Body.(models.AuthEvent)
 	supi := request.Params["supi"]
@@ -113,11 +123,20 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 	header, response, problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
 
 	if response != nil {
-		logger.UeauLog.Infof("[HandleConfirmAuth] Sending 201 Created to AUSF for SUPI [%s]", supi)
-		logger.UeauLog.Infof("[HandleConfirmAuth] -> Location Header: %s", header.Get("Location"))
-		logger.UeauLog.Infof("[HandleConfirmAuth] -> Response Body: %+v", response)
+		// --- TEMPORARY TEST LOGIC ---
+		locationURI := header.Get("Location")
+		logger.UeauLog.Infof("[HandleConfirmAuth] Preparing to send 201 Created.")
+		logger.UeauLog.Infof("[HandleConfirmAuth] -> Location Header to be set: %s", locationURI)
+		logger.UeauLog.Infof("[HandleConfirmAuth] -> Response Body to be set: %+v", response)
+
+		// Directly set the header using the retrieved gin.Context
+		ginContext.Header("Location", locationURI)
+
+		// Set the status and body using the wrapper, but pass a nil header map
+		// because we have already set the header manually.
 		stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
-		return httpwrapper.NewResponse(http.StatusCreated, header, response)
+		return httpwrapper.NewResponse(http.StatusCreated, nil, response)
+		// -----------------------------
 	} else if problemDetails != nil {
 		stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
