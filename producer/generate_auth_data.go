@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"reflect"
@@ -152,11 +153,37 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header h
 	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
 		context.Background(), supi, &createAuthParam)
 
-	if err != nil && resp != nil && resp.StatusCode == http.StatusCreated {
+	// Always close the response body
+	if resp != nil {
+		defer func() {
+			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
+				logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
+			}
+		}()
+	}
+
+	// Step 1: Check for hard errors (network issues, etc.)
+	if err != nil && resp == nil {
+		logger.UeauLog.Errorf("[ConfirmAuth] Failed to send request to UDR: %v", err)
+		problemDetails = util.ProblemDetailsSystemFailure(err.Error())
+		return
+	}
+
+	// Step 2: Check for the successful status code FIRST. This is the most reliable check.
+	if resp.StatusCode == http.StatusCreated {
 		logger.UeauLog.Infof("[ConfirmAuth] Received HTTP status 201 from UDR, processing as success.")
+
+		// The successful response body should be in resp.Body, not in the error object.
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			logger.UeauLog.Errorf("[ConfirmAuth] Failed to read 201 response body from UDR: %+v", readErr)
+			problemDetails = util.ProblemDetailsSystemFailure("UDR Response Body Read Failure")
+			return
+		}
+
 		var createdEvent models.AuthEvent
-		if decodeErr := json.Unmarshal(err.(openapi.GenericOpenAPIError).Body(), &createdEvent); decodeErr != nil {
-			logger.UeauLog.Errorf("[ConfirmAuth] Failed to decode 201 response body from UDR error: %+v", decodeErr)
+		if decodeErr := json.Unmarshal(body, &createdEvent); decodeErr != nil {
+			logger.UeauLog.Errorf("[ConfirmAuth] Failed to decode 201 response body from UDR: %+v", decodeErr)
 			problemDetails = util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
 			return
 		}
@@ -167,39 +194,34 @@ func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header h
 			logger.UeauLog.Infof("Storing AuthEvent with ID [%s] in context for SUPI [%s]", createdEvent.AuthEventId, supi)
 			ue = udm_context.UDM_Self().NewUdmUe(supi)
 		}
-
 		ue.LastAuthenticationEvent = &createdEvent
 
+		// This part of your original code was correct.
 		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
 		header = make(http.Header)
-		header.Set("location", locationURI)
+		header.Set("Location", locationURI) // Use canonical "Location"
 		response = &createdEvent
 		return
 	}
 
-	if err != nil {
-		if resp != nil {
-			logger.UeauLog.Errorf("[ConfirmAuth] UDR returned an unhandled error. Status: %d, Error: %v", resp.StatusCode, err)
-			problemDetails = &models.ProblemDetails{
-				Status: int32(resp.StatusCode),
-				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-				Detail: err.Error(),
-			}
-		} else {
-			logger.UeauLog.Errorf("[ConfirmAuth] Failed to send request to UDR: %v", err)
-			problemDetails = util.ProblemDetailsSystemFailure(err.Error())
-		}
-		return
+	// Step 3: If it wasn't a success, it's an error.
+	logger.UeauLog.Errorf("[ConfirmAuth] UDR returned an unhandled error. Status: %d, Error: %v", resp.StatusCode, err)
+	problemDetails = &models.ProblemDetails{
+		Status: int32(resp.StatusCode),
+		Cause:  "UDR_ERROR",
+		Detail: "Received an unexpected status code from UDR.",
 	}
-
-	defer func() {
-		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-			logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
+	// Try to get more detail from the error if it exists
+	if err != nil {
+		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+			if prob, ok := openApiErr.Model().(models.ProblemDetails); ok {
+				problemDetails.Cause = prob.Cause
+			}
+			problemDetails.Detail = err.Error()
+		} else {
+			problemDetails.Detail = err.Error()
 		}
-	}()
-
-	logger.UeauLog.Errorf("[ConfirmAuth] Received unexpected success status code from UDR: %d", resp.StatusCode)
-	problemDetails = util.ProblemDetailsSystemFailure("Unexpected Status Code from UDR")
+	}
 	return
 }
 
