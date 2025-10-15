@@ -111,28 +111,22 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 	authEvent := request.Body.(models.AuthEvent)
 	supi := request.Params["supi"]
 
-	// This function correctly returns the header, the body (response), or an error (problemDetails)
+	// This function returns the header, the response body, or an error
 	header, response, problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
 
-	// If the procedure was successful, 'response' will be populated.
 	if response != nil {
-		logger.UeauLog.Infof("Successfully created AuthEvent for SUPI [%s]. Preparing 201 Created response.", supi)
 		stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
-
-		// FIX: Pass the 'header' object, which contains the Location URI, to the response wrapper.
-		// The 'response' object is the AuthEvent, which will be serialized into the JSON body.
+		// This is now correct because HTTPConfirmAuth will handle the header.
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
-
 	} else if problemDetails != nil {
 		stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 
-	// Fallback case, though it's unlikely to be hit if ConfirmAuthDataProcedure is implemented correctly.
+	// Fallback error
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusInternalServerError,
-		Cause:  "UNSPECIFIED_ERROR",
-		Detail: "Procedure returned no response and no problem details",
+		Cause:  "UNSPECIFIED",
 	}
 	stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
 	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
