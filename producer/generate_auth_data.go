@@ -106,44 +106,35 @@ func HandleGenerateAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Re
 
 func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UeauLog.Infoln("Handle ConfirmAuthDataRequest")
-	// --- THIS IS A HACK FOR DIAGNOSIS ---
-	// We need to get the original Gin context. The httpwrapper stores it.
-	ginContext, ok := request.Context.Value("gin-context").(*gin.Context)
-	if !ok {
-		logger.UeauLog.Errorln("FATAL: Could not retrieve gin.Context from httpwrapper.")
-		// Return an error so the test fails in a new, obvious way if this happens
-		problemDetails := &models.ProblemDetails{Status: 500, Cause: "GIN_CONTEXT_MISSING"}
-		return httpwrapper.NewResponse(500, nil, problemDetails)
-	}
-	// ------------------------------------
 
 	authEvent := request.Body.(models.AuthEvent)
 	supi := request.Params["supi"]
 
+	// This function correctly returns the header, the body (response), or an error (problemDetails)
 	header, response, problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
 
+	// If the procedure was successful, 'response' will be populated.
 	if response != nil {
-		// --- TEMPORARY TEST LOGIC ---
-		locationURI := header.Get("Location")
-		logger.UeauLog.Infof("[HandleConfirmAuth] Preparing to send 201 Created.")
-		logger.UeauLog.Infof("[HandleConfirmAuth] -> Location Header to be set: %s", locationURI)
-		logger.UeauLog.Infof("[HandleConfirmAuth] -> Response Body to be set: %+v", response)
-
-		// Directly set the header using the retrieved gin.Context
-		ginContext.Header("Location", locationURI)
-
-		// Set the status and body using the wrapper, but pass a nil header map
-		// because we have already set the header manually.
+		logger.UeauLog.Infof("Successfully created AuthEvent for SUPI [%s]. Preparing 201 Created response.", supi)
 		stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
-		return httpwrapper.NewResponse(http.StatusCreated, nil, response)
-		// -----------------------------
+
+		// FIX: Pass the 'header' object, which contains the Location URI, to the response wrapper.
+		// The 'response' object is the AuthEvent, which will be serialized into the JSON body.
+		return httpwrapper.NewResponse(http.StatusCreated, header, response)
+
 	} else if problemDetails != nil {
 		stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 
-	stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
-	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
+	// Fallback case, though it's unlikely to be hit if ConfirmAuthDataProcedure is implemented correctly.
+	problemDetails = &models.ProblemDetails{
+		Status: http.StatusInternalServerError,
+		Cause:  "UNSPECIFIED_ERROR",
+		Detail: "Procedure returned no response and no problem details",
+	}
+	stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
+	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
 func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, response *models.AuthEvent, problemDetails *models.ProblemDetails) {
