@@ -11,7 +11,7 @@
 package factory
 
 import (
-	"github.com/omec-project/openapi/models"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	"github.com/omec-project/util/logger"
 )
 

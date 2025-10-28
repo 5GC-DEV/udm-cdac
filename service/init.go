@@ -18,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/5GC-DEV/openapi-cdac/models"
+	nrfCache "github.com/5GC-DEV/openapi-cdac/nrfcache"
 	grpcClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
-	"github.com/omec-project/openapi/models"
-	nrfCache "github.com/omec-project/openapi/nrfcache"
 	"github.com/omec-project/udm/consumer"
 	"github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/eventexposure"
