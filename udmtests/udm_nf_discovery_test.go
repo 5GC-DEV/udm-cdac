@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/5GC-DEV/openapi-cdac/Nnrf_NFDiscovery"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	"github.com/antihax/optional"
-	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/consumer"
 	udmContext "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/factory"

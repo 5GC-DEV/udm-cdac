@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/models"
+	"github.com/5GC-DEV/openapi-cdac"
+	"github.com/5GC-DEV/openapi-cdac/Nnrf_NFDiscovery"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	"github.com/omec-project/udm/factory"
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/util_3gpp/suci"
@@ -30,6 +30,7 @@ const (
 	LocationUriSmfRegistration
 	LocationUriSdmSubscription
 	LocationUriSharedDataSubscription
+	LocationUriAuthEvents // New constant for AuthEvent resource URI type.
 )
 
 func init() {
@@ -78,6 +79,7 @@ type UdmUeContext struct {
 	PduSessionID                      string
 	UdrUri                            string
 	UdmSubsToNotify                   map[string]*models.SubscriptionDataSubscriptions
+	LastAuthenticationEvent           *models.AuthEvent                 // Field to store the last authentication event. This is needed to validate subsequent deletion requests.
 	EeSubscriptions                   map[string]*models.EeSubscription // subscriptionID as key
 	TraceDataResponse                 models.TraceDataResponse
 	amSubsDataLock                    sync.Mutex
@@ -370,6 +372,15 @@ func (ue *UdmUeContext) GetLocationURI2(types int, supi string) string {
 		// return UDM_Self().GetIPv4Uri() + "/nudm-sdm/v1/shared-data-subscriptions/" + nf.SubscriptionID
 	case LocationUriSdmSubscription:
 		return UDM_Self().GetIPv4Uri() + "/nudm-sdm/v1/" + supi + "/sdm-subscriptions/"
+	}
+	return ""
+}
+
+// New helper function to build the Location URI for a specific AuthEvent.
+func (context *UDMContext) GetLocationURI3(types int, supi string, authEventId string) string {
+	switch types {
+	case LocationUriAuthEvents:
+		return UDM_Self().GetIPv4Uri() + "/nudm-ueau/v1/" + supi + "/auth-events/" + authEventId
 	}
 	return ""
 }

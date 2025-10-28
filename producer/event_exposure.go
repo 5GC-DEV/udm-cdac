@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/omec-project/openapi/models"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	udm_context "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/util/httpwrapper"

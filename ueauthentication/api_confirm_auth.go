@@ -17,9 +17,9 @@ package ueauthentication
 import (
 	"net/http"
 
+	"github.com/5GC-DEV/openapi-cdac"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	"github.com/gin-gonic/gin"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/producer"
 	"github.com/omec-project/util/httpwrapper"
@@ -58,7 +58,7 @@ func HTTPConfirmAuth(c *gin.Context) {
 
 	req := httpwrapper.NewRequest(c.Request, authEvent)
 	req.Params["supi"] = c.Params.ByName("supi")
-
+	// This now contains the Status, Header, and Body
 	rsp := producer.HandleConfirmAuthDataRequest(req)
 
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
@@ -71,6 +71,14 @@ func HTTPConfirmAuth(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
+		// Explicitly write the headers from the httpwrapper.Response to the gin.Context before sending the data.
+		if rsp.Header != nil {
+			for key, values := range rsp.Header {
+				for _, value := range values {
+					c.Header(key, value)
+				}
+			}
+		}
 		c.Data(rsp.Status, "application/json", responseBody)
 	}
 }

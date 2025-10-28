@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/Nnrf_NFManagement"
-	"github.com/omec-project/openapi/models"
+	"github.com/5GC-DEV/openapi-cdac"
+	"github.com/5GC-DEV/openapi-cdac/Nnrf_NFManagement"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	udmContext "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 )
