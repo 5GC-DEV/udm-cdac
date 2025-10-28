@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/5GC-DEV/openapi-cdac"
+	"github.com/5GC-DEV/openapi-cdac/Nudr_DataRepository"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	"github.com/antihax/optional"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/Nudr_DataRepository"
-	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/udm/consumer"
 	udmContext "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"

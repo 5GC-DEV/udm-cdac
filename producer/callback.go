@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/omec-project/openapi/models"
-	nrfCache "github.com/omec-project/openapi/nrfcache"
+	"github.com/5GC-DEV/openapi-cdac/models"
+	nrfCache "github.com/5GC-DEV/openapi-cdac/nrfcache"
 	"github.com/omec-project/udm/consumer"
 	udmContext "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"

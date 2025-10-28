@@ -9,16 +9,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json" // For decoding the UDR response body.
 	"fmt"
+	"io" // For reading the response body as a fallback.
 	"math/big"
 	"net/http"
 	"reflect"
 	"strings"
 
+	"github.com/5GC-DEV/openapi-cdac"
+	"github.com/5GC-DEV/openapi-cdac/Nudr_DataRepository"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	"github.com/antihax/optional"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/Nudr_DataRepository"
-	"github.com/omec-project/openapi/models"
 	udm_context "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 	stats "github.com/omec-project/udm/metrics"
@@ -109,52 +111,118 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 	authEvent := request.Body.(models.AuthEvent)
 	supi := request.Params["supi"]
 
-	problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
-
-	if problemDetails != nil {
+	// The procedure now returns all necessary components for the HTTP response.
+	header, response, problemDetails := ConfirmAuthDataProcedure(authEvent, supi)
+	// Handles the new return values from the procedure.
+	if response != nil {
+		stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
+		// Return a 201 Created with the header and body from the procedure.
+		return httpwrapper.NewResponse(http.StatusCreated, header, response)
+	} else if problemDetails != nil {
 		stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
-	} else {
-		stats.IncrementUdmUeAuthenticationStats("create", "SUCCESS")
-		return httpwrapper.NewResponse(http.StatusCreated, nil, nil)
 	}
+
+	// Fallback error in case the procedure returns unexpectedly.
+	problemDetails = &models.ProblemDetails{
+		Status: http.StatusInternalServerError,
+		Cause:  "UNSPECIFIED",
+	}
+	stats.IncrementUdmUeAuthenticationStats("create", "FAILURE")
+	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
-func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (problemDetails *models.ProblemDetails) {
+func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, response *models.AuthEvent, problemDetails *models.ProblemDetails) {
 	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
 	optInterface := optional.NewInterface(authEvent)
 	createAuthParam.AuthEvent = optInterface
 
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
-		return util.ProblemDetailsSystemFailure(err.Error())
+		// Use naked return with named return variables.
+		problemDetails = util.ProblemDetailsSystemFailure(err.Error())
+		return
 	}
+
 	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
 		context.Background(), supi, &createAuthParam)
-	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: int32(resp.StatusCode),
-			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-			Detail: err.Error(),
-		}
 
-		logger.UeauLog.Errorln("[ConfirmAuth]", err.Error())
-		return problemDetails
+	// The logic is completely replaced to handle the new 201 response correctly.
+	if resp != nil {
+		defer func() {
+			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
+				logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
+			}
+		}()
 	}
-	defer func() {
-		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-			logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
-		}
-	}()
 
-	return nil
+	// First, check for a valid response object and the successful status code.
+	if resp != nil && resp.StatusCode == http.StatusCreated {
+		var createdEvent models.AuthEvent
+		var responseBody []byte
+
+		// This client library puts the 201 response body inside the error object.
+		// Check the error object first.
+		if err != nil {
+			if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+				responseBody = openApiErr.Body()
+			}
+		}
+
+		// Fallback to read the body directly if it wasn't in the error.
+		if responseBody == nil {
+			body, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				problemDetails = util.ProblemDetailsSystemFailure("UDR Response Body Read Failure")
+				return
+			}
+			responseBody = body
+		}
+
+		// Decode the JSON from the UDR response.
+		if decodeErr := json.Unmarshal(responseBody, &createdEvent); decodeErr != nil {
+			problemDetails = util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
+			return
+		}
+
+		// Find or create the UE's context in memory.
+		ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
+		if !ok {
+			logger.UeauLog.Infof("Storing AuthEvent with ID [%s] in context for SUPI [%s]", createdEvent.AuthEventId, supi)
+			ue = udm_context.UDM_Self().NewUdmUe(supi)
+		}
+		// Store the event in the UE's context for the subsequent deletion request.
+		ue.LastAuthenticationEvent = &createdEvent
+
+		// Build the Location header using the new helper function.
+		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
+		header = make(http.Header)
+		header.Set("Location", locationURI) // Set the response body and return successfully.
+		response = &createdEvent
+		return
+	}
+
+	problemDetails = &models.ProblemDetails{
+		Status: http.StatusInternalServerError,
+		Cause:  "UDR_ERROR",
+		Detail: "Received an unexpected status code or error from UDR.",
+	}
+	if resp != nil {
+		problemDetails.Status = int32(resp.StatusCode)
+	}
+	if err != nil {
+		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+			if prob, ok := openApiErr.Model().(models.ProblemDetails); ok {
+				problemDetails.Cause = prob.Cause
+			}
+		}
+		problemDetails.Detail = err.Error()
+	}
+	return
 }
 
-func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest, supiOrSuci string) (
-	response *models.AuthenticationInfoResult, problemDetails *models.ProblemDetails,
-) {
+func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest, supiOrSuci string) (response *models.AuthenticationInfoResult, problemDetails *models.ProblemDetails) {
 	logger.UeauLog.Debugln("in GenerateAuthDataProcedure")
-
 	response = &models.AuthenticationInfoResult{}
 	supi, err := suci.ToSupi(supiOrSuci, udm_context.UDM_Self().SuciProfiles)
 	if err != nil {
@@ -167,9 +235,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 		logger.UeauLog.Errorln("suciToSupi error:", err.Error())
 		return nil, problemDetails
 	}
-
 	logger.UeauLog.Debugf("supi conversion => %s", supi)
-
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
 		return nil, util.ProblemDetailsSystemFailure(err.Error())
@@ -281,7 +347,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 				hasOPC = true
 			}
 		} else {
-			logger.UeauLog.Errorln("opcStr length is", len(opcStr))
+			logger.UeauLog.Errorln("opStr length is", len(opStr))
 		}
 	} else {
 		logger.UeauLog.Infoln("Nil Opc")
@@ -558,4 +624,43 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	response.AuthenticationVector = &av
 	response.Supi = supi
 	return response, nil
+}
+
+// New handler for the PUT request to delete an authentication event.
+func HandleDeleteAuthRequest(request *httpwrapper.Request) *httpwrapper.Response {
+	supi := request.Params["supi"]
+	authEventId := request.Params["authEventId"]
+	problemDetails := DeleteAuthProcedure(supi, authEventId)
+
+	if problemDetails != nil {
+		stats.IncrementUdmUeAuthenticationStats("delete", "FAILURE")
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+	}
+
+	stats.IncrementUdmUeAuthenticationStats("delete", "SUCCESS")
+	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
+}
+
+// New procedure to handle the logic for deleting an authentication event.
+func DeleteAuthProcedure(supi string, authEventId string) (problemDetails *models.ProblemDetails) {
+	// Find the UE's context and check if an event has been stored.
+	ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
+	if !ok || ue.LastAuthenticationEvent == nil {
+		return &models.ProblemDetails{
+			Status: http.StatusNotFound,
+			Cause:  "CONTEXT_NOT_FOUND",
+		}
+	}
+	// Validate that the ID from the request matches the one stored in memory.
+	if ue.LastAuthenticationEvent.AuthEventId != authEventId {
+		return &models.ProblemDetails{
+			Status: http.StatusNotFound,
+			Cause:  "NOT_FOUND",
+			Detail: "The requested authEventId does not match the last known event.",
+		}
+	}
+	// Remove the event from the context to prevent reuse.
+	ue.LastAuthenticationEvent = nil
+	logger.UeauLog.Infof("Authentication event removed from UDM context for SUPI [%s].", supi)
+	return nil // Success
 }

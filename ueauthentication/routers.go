@@ -20,6 +20,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/udm/logger"
+	"github.com/omec-project/udm/producer"
+	"github.com/omec-project/util/httpwrapper"
 	utilLogger "github.com/omec-project/util/logger"
 )
 
@@ -98,4 +100,21 @@ var routes = Routes{
 		"/:supi/auth-events",
 		HTTPConfirmAuth,
 	},
+
+	{
+		"DeleteAuth",
+		"PUT",
+		"/:supi/auth-events/:authEventId",
+		HTTPDeleteAuth, // New route definition for the authentication result deletion procedure.
+	},
+}
+
+// New HTTP handler for the DeleteAuth route. This function serves as the main entry point for the "Authentication Result Removal" procedure
+func HTTPDeleteAuth(c *gin.Context) {
+	req := httpwrapper.NewRequest(c.Request, nil)
+	req.Params["supi"] = c.Params.ByName("supi")
+	req.Params["authEventId"] = c.Params.ByName("authEventId")
+	rsp := producer.HandleDeleteAuthRequest(req)
+	// Send only the status code for a 204 No Content response.
+	c.Status(rsp.Status)
 }

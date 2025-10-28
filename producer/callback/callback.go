@@ -9,9 +9,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
-	"github.com/omec-project/openapi/Nudm_UEContextManagement"
-	"github.com/omec-project/openapi/models"
+	"github.com/5GC-DEV/openapi-cdac/Nudm_SubscriberDataManagement"
+	"github.com/5GC-DEV/openapi-cdac/Nudm_UEContextManagement"
+	"github.com/5GC-DEV/openapi-cdac/models"
 	udm_context "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 )
