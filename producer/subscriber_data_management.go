@@ -7,6 +7,7 @@ package producer
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -45,7 +46,7 @@ func HandleGetAmDataRequest(request *httpwrapper.Request) *httpwrapper.Response 
 }
 
 // GetAmDataProcedure
-func getAmDataProcedure(supi string, plmnID string, supportedFeatures string) (
+/*func getAmDataProcedure(supi string, plmnID string, supportedFeatures string) (
 	response *models.AccessAndMobilitySubscriptionData, problemDetails *models.ProblemDetails,
 ) {
 	var queryAmDataParamOpts Nudr.QueryAmDataParamOpts
@@ -89,6 +90,70 @@ func getAmDataProcedure(supi string, plmnID string, supportedFeatures string) (
 		}
 		return nil, problemDetails
 	}
+} */
+
+func getAmDataProcedure(supi string, plmnID string, supportedFeatures string) (
+	response *models.AccessAndMobilitySubscriptionData, problemDetails *models.ProblemDetails,
+) {
+	logger.SdmLog.Infof("getAmDataProcedure: SUPI=%s, PLMNID=%s, SupportedFeatures=%s",
+		supi, plmnID, supportedFeatures)
+
+	var queryAmDataParamOpts Nudr.QueryAmDataParamOpts
+	queryAmDataParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
+
+	clientAPI, err := createUDMClientToUDR(supi)
+	if err != nil {
+		logger.SdmLog.Errorf("getAmDataProcedure: Failed to create UDR client: %v", err)
+		return nil, util.ProblemDetailsSystemFailure(err.Error())
+	}
+	accessAndMobilitySubscriptionDataResp, res, err :=
+		clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
+			QueryAmData(context.Background(), supi, plmnID, &queryAmDataParamOpts)
+
+	if err != nil {
+		if res == nil {
+			logger.SdmLog.Errorf("getAmDataProcedure: QueryAmData error (no response): %v", err)
+		} else if err.Error() != res.Status {
+			logger.SdmLog.Errorf("getAmDataProcedure: QueryAmData error: %v", err)
+		} else {
+			logger.SdmLog.Errorf("getAmDataProcedure: ProblemDetails received: %+v", err)
+
+			problemDetails = &models.ProblemDetails{
+				Status: int32(res.StatusCode),
+				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+				Detail: err.Error(),
+			}
+			return nil, problemDetails
+		}
+	}
+
+	// Log HTTP response status
+	logger.SdmLog.Infof("getAmDataProcedure: HTTP Status Code: %d", res.StatusCode)
+
+	defer func() {
+		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
+			logger.SdmLog.Errorf("QueryAmData response body cannot close: %+v", rspCloseErr)
+		}
+	}()
+
+	// If success, log the returned AM data
+	if res.StatusCode == http.StatusOK {
+		// Pretty-print the response in JSON
+		jsonBytes, _ := json.MarshalIndent(accessAndMobilitySubscriptionDataResp, "", "  ")
+		logger.SdmLog.Infof("getAmDataProcedure: AM Data Response:\n%s", string(jsonBytes))
+
+		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
+		udmUe.SetAMSubsriptionData(&accessAndMobilitySubscriptionDataResp)
+		return &accessAndMobilitySubscriptionDataResp, nil
+	}
+
+	logger.SdmLog.Warnf("getAmDataProcedure: No AM Data found for SUPI=%s PLMNID=%s", supi, plmnID)
+
+	problemDetails = &models.ProblemDetails{
+		Status: http.StatusNotFound,
+		Cause:  "DATA_NOT_FOUND",
+	}
+	return nil, problemDetails
 }
 
 func HandleGetIdTranslationResultRequest(request *httpwrapper.Request) *httpwrapper.Response {
