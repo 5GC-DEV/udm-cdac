@@ -247,7 +247,14 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 	} else {
 		header = make(http.Header)
 		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
-		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriAmf3GppAccessRegistration))
+
+		// This generates the URI string
+		locationURI := udmUe.GetLocationURI(udmContext.LocationUriAmf3GppAccessRegistration)
+		header.Set("Location", locationURI)
+
+		// Log the URI to verify it's not empty
+		logger.UecmLog.Infof("Generated Location Header for UE [%s]: %s", ueID, locationURI)
+
 		return header, &registerRequest, nil
 	}
 }
