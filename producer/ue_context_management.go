@@ -242,21 +242,18 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 		}
 		callback.SendOnDeregistrationNotification(ueID, oldAmf3GppAccessRegContext.DeregCallbackUri,
 			deregistData) // Deregistration Notify Triggered
-
-		return nil, nil, nil
-	} else {
-		header = make(http.Header)
-		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
-
-		// This generates the URI string
-		locationURI := udmUe.GetLocationURI(udmContext.LocationUriAmf3GppAccessRegistration)
-		header.Set("Location", locationURI)
-
-		// Log the URI to verify it's not empty
-		logger.UecmLog.Infof("Generated Location Header for UE [%s]: %s", ueID, locationURI)
-
-		return header, &registerRequest, nil
 	}
+	header = make(http.Header)
+	udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
+
+	// This generates the URI string
+	locationURI := udmUe.GetLocationURI(udmContext.LocationUriAmf3GppAccessRegistration)
+	header.Set("Location", locationURI)
+
+	// Log the URI to verify it's not empty
+	logger.UecmLog.Infof("Generated Location Header for UE [%s]: %s", ueID, locationURI)
+
+	return header, &registerRequest, nil
 }
 
 // HandleRegisterAmfNon3gppAccessRequest TS 29.503 5.3.2.2.3
