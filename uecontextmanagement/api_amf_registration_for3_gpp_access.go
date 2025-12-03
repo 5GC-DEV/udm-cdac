@@ -62,9 +62,10 @@ func HTTPRegistrationAmf3gppAccess(c *gin.Context) {
 	rsp := producer.HandleRegistrationAmf3gppAccessRequest(req)
 
 	// step 5: response
-	for key, val := range rsp.Header { // header response is optional
-		c.Header(key, val[0])
-	}
+	//for key, val := range rsp.Header { // header response is optional
+	//	c.Header(key, val[0])
+	//}
+
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
 		logger.UecmLog.Errorln(err)
@@ -75,6 +76,13 @@ func HTTPRegistrationAmf3gppAccess(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
+		if rsp.Header != nil {
+			for key, values := range rsp.Header {
+				for _, value := range values {
+					c.Header(key, value)
+				}
+			}
+		}
 		c.Data(rsp.Status, "application/json", responseBody)
 	}
 }
