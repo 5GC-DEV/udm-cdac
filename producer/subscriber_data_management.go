@@ -689,7 +689,7 @@ func HandleGetNssaiRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
-func getNssaiProcedure(supi string, plmnID string, supportedFeatures string) (
+/*func getNssaiProcedure(supi string, plmnID string, supportedFeatures string) (
 	*models.Nssai, *models.ProblemDetails,
 ) {
 	var queryAmDataParamOpts Nudr.QueryAmDataParamOpts
@@ -737,6 +737,89 @@ func getNssaiProcedure(supi string, plmnID string, supportedFeatures string) (
 		}
 		return nil, problemDetails
 	}
+}*/
+
+func getNssaiProcedure(supi string, plmnID string, supportedFeatures string) (
+	*models.Nssai, *models.ProblemDetails,
+) {
+	var queryAmDataParamOpts Nudr.QueryAmDataParamOpts
+	queryAmDataParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
+	var nssaiResp models.Nssai
+
+	clientAPI, err := createUDMClientToUDR(supi)
+	if err != nil {
+		logger.SdmLog.Errorf("[NSSAI] Failed to create UDM->UDR client for SUPI=%s : %v", supi, err)
+		return nil, util.ProblemDetailsSystemFailure(err.Error())
+	}
+
+	accessAndMobilitySubscriptionDataResp, res, err := clientAPI.
+		AccessAndMobilitySubscriptionDataDocumentApi.
+		QueryAmData(context.Background(), supi, plmnID, &queryAmDataParamOpts)
+
+	if err != nil {
+		if res == nil {
+			logger.SdmLog.Warnf("[NSSAI] QueryAmData failed for SUPI=%s (no response): %v", supi, err)
+		} else if err.Error() != res.Status {
+			logger.SdmLog.Warnf("[NSSAI] QueryAmData failed for SUPI=%s, Status=%s : %v", supi, res.Status, err)
+		} else {
+			logger.SdmLog.Warnf("[NSSAI] QueryAmData error for SUPI=%s: %v", supi, err)
+			problemDetails := &models.ProblemDetails{
+				Status: int32(res.StatusCode),
+				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+				Detail: err.Error(),
+			}
+			return nil, problemDetails
+		}
+	}
+
+	defer func() {
+		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
+			logger.SdmLog.Errorf("QueryAmData response body cannot close: %+v", rspCloseErr)
+		}
+	}()
+
+	nssaiResp = *accessAndMobilitySubscriptionDataResp.Nssai
+
+	// --------------------------------------------------
+	// 🔍 ADDING LOGS TO CHECK FOR MULTIPLE NSSAI
+	// --------------------------------------------------
+	logger.SdmLog.Infof("[NSSAI] Received NSSAI for SUPI=%s", supi)
+
+	if len(nssaiResp.DefaultSingleNssais) > 0 {
+		logger.SdmLog.Infof("[NSSAI] Default NSSAI Count = %d", len(nssaiResp.DefaultSingleNssais))
+		for i, s := range nssaiResp.DefaultSingleNssais {
+			logger.SdmLog.Infof("[NSSAI]   DefaultSlice[%d] -> SST=%d SD=%s", i, s.Sst, s.Sd)
+		}
+	} else {
+		logger.SdmLog.Warn("[NSSAI] No Default NSSAI returned")
+	}
+
+	if len(nssaiResp.SingleNssais) > 0 {
+		logger.SdmLog.Infof("[NSSAI] Single NSSAI Count = %d", len(nssaiResp.SingleNssais))
+		for i, s := range nssaiResp.SingleNssais {
+			logger.SdmLog.Infof("[NSSAI]   Slice[%d] -> SST=%d SD=%s", i, s.Sst, s.Sd)
+		}
+	} else {
+		logger.SdmLog.Warn("[NSSAI] No Single NSSAI returned")
+	}
+	// --------------------------------------------------
+
+	if res.StatusCode == http.StatusOK {
+		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
+		udmUe.Nssai = &nssaiResp
+
+		logger.SdmLog.Infof("[NSSAI] NSSAI stored in UDM UE context for SUPI=%s", supi)
+
+		return udmUe.Nssai, nil
+	}
+
+	problemDetails := &models.ProblemDetails{
+		Status: http.StatusNotFound,
+		Cause:  "DATA_NOT_FOUND",
+	}
+
+	logger.SdmLog.Warnf("[NSSAI] NSSAI not found in UDR for SUPI=%s", supi)
+	return nil, problemDetails
 }
 
 func HandleGetSmfSelectDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
