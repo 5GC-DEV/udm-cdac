@@ -219,13 +219,20 @@ func RegistrationAmf3gppAccessProcedure(registerRequest models.Amf3GppAccessRegi
 	resp, err := clientAPI.AMF3GPPAccessRegistrationDocumentApi.CreateAmfContext3gpp(context.Background(),
 		ueID, &createAmfContext3gppParamOpts)
 	if err != nil {
-		logger.UecmLog.Errorln("CreateAmfContext3gpp error : ", err)
-		problemDetails = &models.ProblemDetails{
-			Status: int32(resp.StatusCode),
-			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-			Detail: err.Error(),
+		// FIX: Explicitly check if the "error" is actually a 201 Created success
+		if resp != nil && resp.StatusCode == 201 {
+			logger.UecmLog.Infoln("UDR returned 201 Created")
+			// Do not return here; allow the code to proceed to set the Location header
+		} else {
+			// Real error handling
+			logger.UecmLog.Errorln("CreateAmfContext3gpp error : ", err)
+			problemDetails = &models.ProblemDetails{
+				Status: int32(resp.StatusCode),
+				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+				Detail: err.Error(),
+			}
+			return nil, nil, problemDetails
 		}
-		return nil, nil, problemDetails
 	}
 	defer func() {
 		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
