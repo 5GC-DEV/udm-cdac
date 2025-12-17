@@ -6,9 +6,11 @@
 package producer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -645,6 +647,37 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		pduID32,
 		&createSmfContextNon3gppParamOpts,
 	)
+
+	if resp != nil && resp.Body != nil {
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			logger.UecmLog.Warnf("Failed to read CreateSmfContextNon3gpp response body: %v", readErr)
+		} else {
+			logger.UecmLog.Infof(
+				"CreateSmfContextNon3gpp response ueId=%s pduSessionId=%d status=%d body=%s",
+				ueID,
+				pduID32,
+				resp.StatusCode,
+				string(bodyBytes),
+			)
+
+			// IMPORTANT: restore body for further use
+			resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		}
+	}
+
+	if err != nil && resp != nil && resp.Body != nil {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		logger.UecmLog.Warnf(
+			"CreateSmfContextNon3gpp failed ueId=%s pduSessionId=%d status=%d body=%s err=%v",
+			ueID,
+			pduID32,
+			resp.StatusCode,
+			string(bodyBytes),
+			err,
+		)
+		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
 
 	if err != nil {
 		var apiErr openapi.GenericOpenAPIError
