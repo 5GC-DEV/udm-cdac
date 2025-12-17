@@ -7,6 +7,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -627,7 +628,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
+	/*resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
 	if err != nil {
 		problemDetails.Cause = err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause
@@ -637,7 +638,43 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 			Detail: err.Error(),
 		}
 		return nil, nil, problemDetails
+	}*/
+	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(
+		context.Background(),
+		ueID,
+		pduID32,
+		&createSmfContextNon3gppParamOpts,
+	)
+
+	if err != nil {
+		var apiErr openapi.GenericOpenAPIError
+
+		// Case 1: OpenAPI error with ProblemDetails
+		if errors.As(err, &apiErr) {
+			if pd, ok := apiErr.Model().(models.ProblemDetails); ok {
+				problemDetails = &models.ProblemDetails{
+					Status: int32(resp.StatusCode),
+					Cause:  pd.Cause,
+					Detail: pd.Detail,
+				}
+				return nil, nil, problemDetails
+			}
+		}
+
+		// Case 2: Non-OpenAPI error (network, runtime, etc.)
+		status := http.StatusInternalServerError
+		if resp != nil {
+			status = resp.StatusCode
+		}
+
+		problemDetails = &models.ProblemDetails{
+			Status: int32(status),
+			Cause:  "SYSTEM_FAILURE",
+			Detail: err.Error(),
+		}
+		return nil, nil, problemDetails
 	}
+
 	defer func() {
 		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
 			logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
