@@ -585,7 +585,7 @@ func DeregistrationSmfRegistrationsProcedure(ueID string, pduSessionID string) (
 }
 
 // HandleRegistrationSmfRegistrationsRequest SmfRegistrations
-func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
+/*func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 	registerRequest := request.Body.(models.SmfRegistration)
 	ueID := request.Params["ueId"]
@@ -603,10 +603,68 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 		// all nil
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
+}*/
+
+func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
+	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
+
+	// Extract request details
+	registerRequest := request.Body.(models.SmfRegistration)
+	ueID := request.Params["ueId"]
+	pduSessionID := request.Params["pduSessionId"]
+
+	logger.UecmLog.Infof(
+		"SMF registration request received ueId=%s pduSessionId=%s request=%+v",
+		ueID,
+		pduSessionID,
+		registerRequest,
+	)
+
+	header, response, problemDetails :=
+		RegistrationSmfRegistrationsProcedure(&registerRequest, ueID, pduSessionID)
+
+	// Success with response body (201 Created)
+	if response != nil {
+		logger.UecmLog.Infof(
+			"SMF registration succeeded ueId=%s pduSessionId=%s status=%d location=%s",
+			ueID,
+			pduSessionID,
+			http.StatusCreated,
+			header.Get("Location"),
+		)
+
+		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
+		return httpwrapper.NewResponse(http.StatusCreated, header, response)
+	}
+
+	// Failure path
+	if problemDetails != nil {
+		logger.UecmLog.Warnf(
+			"SMF registration failed ueId=%s pduSessionId=%s status=%d cause=%s detail=%s",
+			ueID,
+			pduSessionID,
+			problemDetails.Status,
+			problemDetails.Cause,
+			problemDetails.Detail,
+		)
+
+		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "FAILURE")
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+	}
+
+	// Context already existed (204 No Content)
+	logger.UecmLog.Infof(
+		"SMF registration already exists ueId=%s pduSessionId=%s returning 204",
+		ueID,
+		pduSessionID,
+	)
+
+	stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
+	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
 // RegistrationSmfRegistrationsProcedure SmfRegistrationsProcedure
-func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
+/*func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
 	contextExisted := false
@@ -641,7 +699,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		}
 		return nil, nil, problemDetails
 	}*/
-	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(
+/*resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(
 		context.Background(),
 		ueID,
 		pduID32,
@@ -722,4 +780,172 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
 		return header, request, nil
 	}
+}*/
+
+func RegistrationSmfRegistrationsProcedure(
+	request *models.SmfRegistration,
+	ueID string,
+	pduSessionID string,
+) (
+	header http.Header,
+	response *models.SmfRegistration,
+	problemDetails *models.ProblemDetails,
+) {
+	logger.UecmLog.Infof(
+		"RegistrationSmfRegistrationsProcedure start ueId=%s pduSessionId=%s",
+		ueID,
+		pduSessionID,
+	)
+
+	contextExisted := false
+	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
+	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
+		contextExisted = true
+	}
+
+	logger.UecmLog.Infof(
+		"SMF registration context check ueId=%s pduSessionId=%s contextExisted=%v",
+		ueID,
+		pduSessionID,
+		contextExisted,
+	)
+
+	pduID64, err := strconv.ParseInt(pduSessionID, 10, 32)
+	if err != nil {
+		logger.UecmLog.Errorf(
+			"Invalid pduSessionId ueId=%s pduSessionId=%s err=%v",
+			ueID,
+			pduSessionID,
+			err,
+		)
+	}
+	pduID32 := int32(pduID64)
+
+	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
+	createSmfContextNon3gppParamOpts.SmfRegistration = optional.NewInterface(request)
+
+	logger.UecmLog.Debugf(
+		"Calling UDR CreateSmfContextNon3gpp ueId=%s pduSessionId=%d request=%+v",
+		ueID,
+		pduID32,
+		request,
+	)
+
+	clientAPI, err := createUDMClientToUDR(ueID)
+	if err != nil {
+		logger.UecmLog.Errorf(
+			"Failed to create UDR client ueId=%s err=%v",
+			ueID,
+			err,
+		)
+		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
+	}
+
+	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(
+		context.Background(),
+		ueID,
+		pduID32,
+		&createSmfContextNon3gppParamOpts,
+	)
+
+	// ---- Log UDR response body (if present) ----
+	if resp != nil && resp.Body != nil {
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			logger.UecmLog.Warnf(
+				"Failed to read UDR response body ueId=%s err=%v",
+				ueID,
+				readErr,
+			)
+		} else {
+			logger.UecmLog.Infof(
+				"UDR CreateSmfContextNon3gpp response ueId=%s pduSessionId=%d status=%d body=%s",
+				ueID,
+				pduID32,
+				resp.StatusCode,
+				string(bodyBytes),
+			)
+			resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		}
+	}
+
+	// ---- Error handling ----
+	if err != nil {
+		logger.UecmLog.Warnf(
+			"UDR CreateSmfContextNon3gpp returned error ueId=%s pduSessionId=%d err=%v",
+			ueID,
+			pduID32,
+			err,
+		)
+
+		var apiErr openapi.GenericOpenAPIError
+		if errors.As(err, &apiErr) {
+			if pd, ok := apiErr.Model().(models.ProblemDetails); ok {
+				status := int32(resp.StatusCode)
+				if status == 0 {
+					status = http.StatusInternalServerError
+				}
+
+				logger.UecmLog.Warnf(
+					"Mapped OpenAPI error ueId=%s status=%d cause=%s detail=%s",
+					ueID,
+					status,
+					pd.Cause,
+					pd.Detail,
+				)
+
+				return nil, nil, &models.ProblemDetails{
+					Status: int32(status),
+					Cause:  pd.Cause,
+					Detail: pd.Detail,
+				}
+			}
+		}
+
+		logger.UecmLog.Errorf(
+			"Non-OpenAPI error during SMF registration ueId=%s err=%v",
+			ueID,
+			err,
+		)
+
+		return nil, nil, &models.ProblemDetails{
+			Status: http.StatusInternalServerError,
+			Cause:  "SYSTEM_FAILURE",
+			Detail: err.Error(),
+		}
+	}
+
+	defer func() {
+		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
+			logger.UecmLog.Errorf(
+				"Failed to close UDR response body ueId=%s err=%v",
+				ueID,
+				rspCloseErr,
+			)
+		}
+	}()
+
+	// ---- Final return path ----
+	if contextExisted {
+		logger.UecmLog.Infof(
+			"SMF registration already existed ueId=%s pduSessionId=%s returning 204",
+			ueID,
+			pduSessionID,
+		)
+		return nil, nil, nil
+	}
+
+	header = make(http.Header)
+	udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
+	location := udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration)
+	header.Set("Location", location)
+
+	logger.UecmLog.Infof(
+		"SMF registration created ueId=%s pduSessionId=%s location=%s",
+		ueID,
+		pduSessionID,
+		location,
+	)
+
+	return header, request, nil
 }
