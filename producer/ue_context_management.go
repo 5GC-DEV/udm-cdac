@@ -822,7 +822,8 @@ func RegistrationSmfRegistrationsProcedure(
 	pduID32 := int32(pduID64)
 
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-	createSmfContextNon3gppParamOpts.SmfRegistration = optional.NewInterface(request)
+	// createSmfContextNon3gppParamOpts.SmfRegistration = optional.NewInterface(request)
+	createSmfContextNon3gppParamOpts.SmfRegistration = optional.NewInterface(*request)
 
 	logger.UecmLog.Debugf(
 		"Calling UDR CreateSmfContextNon3gpp ueId=%s pduSessionId=%d request=%+v",
