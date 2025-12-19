@@ -6,11 +6,8 @@
 package producer
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -664,14 +661,12 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 }
 
 // RegistrationSmfRegistrationsProcedure SmfRegistrationsProcedure
-/*func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
+func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
-	contextExisted := false
+	contextExisted := !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID)
+
 	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
-	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
-		contextExisted = true
-	}
 
 	pduID64, err := strconv.ParseInt(pduSessionID, 10, 32)
 	if err != nil {
@@ -713,9 +708,9 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
 		return header, request, nil
 	}
-} */
+}
 
-func RegistrationSmfRegistrationsProcedure(
+/*func RegistrationSmfRegistrationsProcedure(
 	request *models.SmfRegistration,
 	ueID string,
 	pduSessionID string,
@@ -880,4 +875,4 @@ func RegistrationSmfRegistrationsProcedure(
 	)
 
 	return header, request, nil
-}
+}*/
