@@ -680,7 +680,7 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 	pduID32 := int32(pduID64)
 
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-	optInterface := optional.NewInterface(request)
+	optInterface := optional.NewInterface(*request)
 	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
 
 	clientAPI, err := createUDMClientToUDR(ueID)
@@ -688,7 +688,7 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	/*resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
+	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
 	if err != nil {
 		problemDetails.Cause = err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause
@@ -698,74 +698,7 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 			Detail: err.Error(),
 		}
 		return nil, nil, problemDetails
-	}*/
-/*resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(
-		context.Background(),
-		ueID,
-		pduID32,
-		&createSmfContextNon3gppParamOpts,
-	)
-
-	if resp != nil && resp.Body != nil {
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			logger.UecmLog.Warnf("Failed to read CreateSmfContextNon3gpp response body: %v", readErr)
-		} else {
-			logger.UecmLog.Infof(
-				"CreateSmfContextNon3gpp response ueId=%s pduSessionId=%d status=%d body=%s",
-				ueID,
-				pduID32,
-				resp.StatusCode,
-				string(bodyBytes),
-			)
-
-			// IMPORTANT: restore body for further use
-			resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		}
 	}
-
-	if err != nil && resp != nil && resp.Body != nil {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		logger.UecmLog.Warnf(
-			"CreateSmfContextNon3gpp failed ueId=%s pduSessionId=%d status=%d body=%s err=%v",
-			ueID,
-			pduID32,
-			resp.StatusCode,
-			string(bodyBytes),
-			err,
-		)
-		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-	}
-
-	if err != nil {
-		var apiErr openapi.GenericOpenAPIError
-
-		// Case 1: OpenAPI error with ProblemDetails
-		if errors.As(err, &apiErr) {
-			if pd, ok := apiErr.Model().(models.ProblemDetails); ok {
-				problemDetails = &models.ProblemDetails{
-					Status: int32(resp.StatusCode),
-					Cause:  pd.Cause,
-					Detail: pd.Detail,
-				}
-				return nil, nil, problemDetails
-			}
-		}
-
-		// Case 2: Non-OpenAPI error (network, runtime, etc.)
-		status := http.StatusInternalServerError
-		if resp != nil {
-			status = resp.StatusCode
-		}
-
-		problemDetails = &models.ProblemDetails{
-			Status: int32(status),
-			Cause:  "SYSTEM_FAILURE",
-			Detail: err.Error(),
-		}
-		return nil, nil, problemDetails
-	}
-
 	defer func() {
 		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
 			logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
@@ -780,7 +713,7 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
 		return header, request, nil
 	}
-}*/
+} */
 
 func RegistrationSmfRegistrationsProcedure(
 	request *models.SmfRegistration,
@@ -797,11 +730,9 @@ func RegistrationSmfRegistrationsProcedure(
 		pduSessionID,
 	)
 
-	contextExisted := false
+	contextExisted := !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID)
+
 	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
-	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
-		contextExisted = true
-	}
 
 	logger.UecmLog.Infof(
 		"SMF registration context check ueId=%s pduSessionId=%s contextExisted=%v",
