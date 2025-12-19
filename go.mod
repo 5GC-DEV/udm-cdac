@@ -16,7 +16,7 @@ require (
 )
 
 require (
-	github.com/5GC-DEV/openapi-cdac v1.0.1-0.20251209093311-aa679bf44db6 // indirect
+	github.com/5GC-DEV/openapi-cdac v1.0.1-0.20251219124213-b5f5d98451cf // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.13.3 // indirect
