@@ -606,11 +606,9 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
-	contextExisted := false
+
+	contextExisted := !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID)
 	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
-	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
-		contextExisted = true
-	}
 
 	pduID64, err := strconv.ParseInt(pduSessionID, 10, 32)
 	if err != nil {
