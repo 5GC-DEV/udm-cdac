@@ -619,7 +619,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	pduID32 := int32(pduID64)
 
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-	optInterface := optional.NewInterface(request)
+	optInterface := optional.NewInterface(*request)
 	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
 
 	clientAPI, err := createUDMClientToUDR(ueID)
