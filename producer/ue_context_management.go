@@ -606,10 +606,8 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
-
 	contextExisted := !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID)
 	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
-
 	pduID64, err := strconv.ParseInt(pduSessionID, 10, 32)
 	if err != nil {
 		logger.UecmLog.Errorln(err.Error())
@@ -617,8 +615,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	pduID32 := int32(pduID64)
 
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-	optInterface := optional.NewInterface(*request)
-	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
+	createSmfContextNon3gppParamOpts.SmfRegistration = optional.NewInterface(*request)
 
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
