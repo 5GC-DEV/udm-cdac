@@ -582,7 +582,7 @@ func DeregistrationSmfRegistrationsProcedure(ueID string, pduSessionID string) (
 }
 
 // HandleRegistrationSmfRegistrationsRequest SmfRegistrations
-/*func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
+func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 	registerRequest := request.Body.(models.SmfRegistration)
 	ueID := request.Params["ueId"]
@@ -600,9 +600,9 @@ func DeregistrationSmfRegistrationsProcedure(ueID string, pduSessionID string) (
 		// all nil
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
-}*/
+}
 
-func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
+/*func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 
 	// Extract request details
@@ -658,10 +658,10 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 
 	stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
-}
+}*/
 
 // RegistrationSmfRegistrationsProcedure SmfRegistrationsProcedure
-func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
+/*func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
 	contextExisted := !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID)
@@ -708,9 +708,9 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
 		return header, request, nil
 	}
-}
+}*/
 
-/*func RegistrationSmfRegistrationsProcedure(
+func RegistrationSmfRegistrationsProcedure(
 	request *models.SmfRegistration,
 	ueID string,
 	pduSessionID string,
@@ -875,4 +875,4 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	)
 
 	return header, request, nil
-}*/
+}
