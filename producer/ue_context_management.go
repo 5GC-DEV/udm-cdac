@@ -582,7 +582,7 @@ func DeregistrationSmfRegistrationsProcedure(ueID string, pduSessionID string) (
 }
 
 // HandleRegistrationSmfRegistrationsRequest SmfRegistrations
-func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
+/*func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 	registerRequest := request.Body.(models.SmfRegistration)
 	ueID := request.Params["ueId"]
@@ -600,9 +600,9 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 		// all nil
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
-}
+}*/
 
-/*func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
+func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 
 	// Extract request details
@@ -658,7 +658,7 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 
 	stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
-}*/
+}
 
 // RegistrationSmfRegistrationsProcedure SmfRegistrationsProcedure
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
