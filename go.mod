@@ -3,6 +3,7 @@ module github.com/omec-project/udm
 go 1.24.0
 
 require (
+	github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260109140746-44d5650a6474
 	github.com/antihax/optional v1.0.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
@@ -16,7 +17,6 @@ require (
 )
 
 require (
-	github.com/5GC-DEV/openapi-cdac v1.0.1-0.20251219124213-b5f5d98451cf // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.13.3 // indirect
@@ -50,11 +50,11 @@ require (
 	github.com/ugorji/go/codec v1.2.14 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.17.0 // indirect
-	golang.org/x/crypto v0.38.0 // indirect
-	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/grpc v1.72.2 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
