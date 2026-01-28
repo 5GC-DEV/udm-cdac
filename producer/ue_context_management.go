@@ -631,24 +631,29 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		pduID32, &createSmfContextNon3gppParamOpts)
 
 	if err != nil {
-		// 1. Initialize the struct first to avoid the panic
-		problemDetails = &models.ProblemDetails{}
+		// 1. Initialize problemDetails immediately
+		problemDetails = &models.ProblemDetails{
+			Status: http.StatusInternalServerError, // Default status
+			Detail: err.Error(),                    // Put the raw error message here
+		}
 
-		// 2. Safely check if the error contains a Model with a Cause
+		// 2. Safely check if it's an OpenAPI error
 		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+			// Now it's safe to check the model
 			if model, ok := openApiErr.Model().(models.ProblemDetails); ok {
 				problemDetails.Cause = model.Cause
+				if model.Status != 0 {
+					problemDetails.Status = model.Status
+				}
 			}
 		}
 
-		// 3. Set the status code from the response if available
+		// 3. Update status code from the HTTP response if available
 		if resp != nil {
 			problemDetails.Status = int32(resp.StatusCode)
-		} else {
-			problemDetails.Status = http.StatusInternalServerError
 		}
 
-		problemDetails.Detail = err.Error()
+		logger.UecmLog.Errorf("UDR CreateSmfContext error: %v", err)
 		return nil, nil, problemDetails
 	}
 	defer func() {
