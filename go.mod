@@ -3,7 +3,7 @@ module github.com/omec-project/udm
 go 1.24.0
 
 require (
-	github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260109140746-44d5650a6474
+	github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260128100246-6b6810a8d96c
 	github.com/antihax/optional v1.0.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
