@@ -629,13 +629,26 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
+
 	if err != nil {
-		problemDetails.Cause = err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause
-		problemDetails = &models.ProblemDetails{
-			Status: int32(resp.StatusCode),
-			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-			Detail: err.Error(),
+		// 1. Initialize the struct first to avoid the panic
+		problemDetails = &models.ProblemDetails{}
+
+		// 2. Safely check if the error contains a Model with a Cause
+		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+			if model, ok := openApiErr.Model().(models.ProblemDetails); ok {
+				problemDetails.Cause = model.Cause
+			}
 		}
+
+		// 3. Set the status code from the response if available
+		if resp != nil {
+			problemDetails.Status = int32(resp.StatusCode)
+		} else {
+			problemDetails.Status = http.StatusInternalServerError
+		}
+
+		problemDetails.Detail = err.Error()
 		return nil, nil, problemDetails
 	}
 	defer func() {
