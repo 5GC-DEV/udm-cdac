@@ -26,51 +26,67 @@ import (
 )
 
 func createUDMClientToUDR(id string) (*Nudr_DataRepository.APIClient, error) {
+	logger.UecmLog.Infof("[createUDMClientToUDR] START | id=%s", id)
 	uri := getUdrURI(id)
 	if uri == "" {
+		logger.UecmLog.Errorf("[createUDMClientToUDR] No UDR URI resolved | id=%s", id)
 		logger.Handlelog.Errorf("ID[%s] does not match any UDR", id)
 		return nil, fmt.Errorf("no UDR URI found")
 	}
+	logger.UecmLog.Infof("[createUDMClientToUDR] UDR URI resolved | id=%s | uri=%s", id, uri)
 	cfg := Nudr_DataRepository.NewConfiguration()
 	cfg.SetBasePath(uri)
 	clientAPI := Nudr_DataRepository.NewAPIClient(cfg)
+	logger.UecmLog.Infof("[createUDMClientToUDR] UDR client created successfully | id=%s", id)
 	return clientAPI, nil
 }
 
 func getUdrURI(id string) string {
+	logger.UecmLog.Infof("[getUdrURI] START | id=%s", id)
 	if strings.Contains(id, "imsi") || strings.Contains(id, "nai") { // supi
+		logger.UecmLog.Infof("[getUdrURI] ID identified as SUPI | id=%s", id)
 		ue, ok := udmContext.UDM_Self().UdmUeFindBySupi(id)
 		if ok {
+			logger.UecmLog.Infof("[getUdrURI] UE context found | supi=%s", id)
 			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
 			return ue.UdrUri
 		} else {
+			logger.UecmLog.Infof("[getUdrURI] UE context NOT found, creating new | supi=%s", id)
 			ue = udmContext.UDM_Self().NewUdmUe(id)
 			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
+			logger.UecmLog.Infof("[getUdrURI] NRF discovery result | supi=%s | udrUri=%s", id, ue.UdrUri)
 			return ue.UdrUri
 		}
 	} else if strings.Contains(id, "pei") {
+		logger.UecmLog.Infof("[getUdrURI] ID identified as PEI | id=%s", id)
 		var udrURI string
 		udmContext.UDM_Self().UdmUePool.Range(func(key, value interface{}) bool {
 			ue := value.(*udmContext.UdmUeContext)
 			if ue.Amf3GppAccessRegistration != nil && ue.Amf3GppAccessRegistration.Pei == id {
+				logger.UecmLog.Infof("[getUdrURI] PEI matched in 3GPP registration | supi=%s", ue.Supi)
 				ue.UdrUri = consumer.SendNFInstancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
 				udrURI = ue.UdrUri
 				return false
 			} else if ue.AmfNon3GppAccessRegistration != nil && ue.AmfNon3GppAccessRegistration.Pei == id {
+				logger.UecmLog.Infof("[getUdrURI] PEI matched in Non-3GPP registration | supi=%s", ue.Supi)
 				ue.UdrUri = consumer.SendNFInstancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
 				udrURI = ue.UdrUri
 				return false
 			}
 			return true
 		})
+		logger.UecmLog.Infof("[getUdrURI] PEI resolution result | pei=%s | udrUri=%s", id, udrURI)
 		return udrURI
 	} else if strings.Contains(id, "extgroupid") {
+		logger.UecmLog.Infof("[getUdrURI] ID identified as External Group ID | id=%s", id)
 		// extra group id
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamExtGroupId)
 	} else if strings.Contains(id, "msisdn") || strings.Contains(id, "extid") {
 		// gpsi
+		logger.UecmLog.Infof("[getUdrURI] ID identified as GPSI | id=%s", id)
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamGpsi)
 	}
+	logger.UecmLog.Infof("[getUdrURI] ID type unknown, using default discovery | id=%s", id)
 	return consumer.SendNFInstancesUDR("", consumer.NFDiscoveryToUDRParamNone)
 }
 
@@ -622,29 +638,31 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	optInterface := optional.NewInterface(request)
 	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
 
+	logger.UecmLog.Infof("[RegistrationSmfRegistrationsProcedure] Calling UDR CreateSmfContextNon3gpp | ueID=%s | pduID=%d", ueID, pduID32)
+
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
+		logger.UecmLog.Infof(
+			"[RegistrationSmfRegistrationsProcedure] Failed to create UDR client | ueID=%s | pduSessionID=%s | err=%v",
+			ueID,
+			pduSessionID,
+			err,
+		)
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
+	logger.UecmLog.Infof("[RegistrationSmfRegistrationsProcedure] UDR client created successfully | ueID=%s", ueID)
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
 	if err != nil {
-		var cause string
-		if genericErr, ok := err.(openapi.GenericOpenAPIError); ok {
-			if model, ok := genericErr.Model().(models.ProblemDetails); ok {
-				cause = model.Cause
-			}
-		}
+		problemDetails.Cause = err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause
 		problemDetails = &models.ProblemDetails{
 			Status: int32(resp.StatusCode),
-			Cause:  cause,
+			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
 			Detail: err.Error(),
 		}
-
 		return nil, nil, problemDetails
 	}
-
 	defer func() {
 		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
 			logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
