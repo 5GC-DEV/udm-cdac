@@ -619,7 +619,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	pduID32 := int32(pduID64)
 
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-	optInterface := optional.NewInterface(request)
+	optInterface := optional.NewInterface(*request)
 	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
 
 	clientAPI, err := createUDMClientToUDR(ueID)
@@ -629,31 +629,29 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
-
 	if err != nil {
-		// 1. Initialize problemDetails immediately
+		// 1. Log the specific error to help debugging
+		logger.UecmLog.Errorf("UDR CreateSmfContext error: %v", err)
+
+		// 2. Initialize problemDetails safely
 		problemDetails = &models.ProblemDetails{
-			Status: http.StatusInternalServerError, // Default status
-			Detail: err.Error(),                    // Put the raw error message here
+			Status: http.StatusInternalServerError,
+			Detail: err.Error(),
 		}
 
-		// 2. Safely check if it's an OpenAPI error
+		// 3. Safe type assertion (Comma-ok syntax)
 		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-			// Now it's safe to check the model
 			if model, ok := openApiErr.Model().(models.ProblemDetails); ok {
 				problemDetails.Cause = model.Cause
-				if model.Status != 0 {
-					problemDetails.Status = model.Status
-				}
+				problemDetails.Status = model.Status
 			}
 		}
 
-		// 3. Update status code from the HTTP response if available
+		// 4. Update status from HTTP response if UDR actually replied
 		if resp != nil {
 			problemDetails.Status = int32(resp.StatusCode)
 		}
 
-		logger.UecmLog.Errorf("UDR CreateSmfContext error: %v", err)
 		return nil, nil, problemDetails
 	}
 	defer func() {
