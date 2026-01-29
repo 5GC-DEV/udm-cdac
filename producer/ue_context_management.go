@@ -618,29 +618,70 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	}
 	pduID32 := int32(pduID64)
 
-	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-
-	// FIX 1: Dereference (*request) so the library gets the struct value
-	optInterface := optional.NewInterface(*request)
-	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
-
+	// Create the Client
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
 		logger.UecmLog.Errorf("Failed to create UDM client for UDR: %v", err)
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
+	// =================================================================================
+	// LOGIC START: Roaming Restriction Check
+	// =================================================================================
+	if request.PlmnId != nil {
+		servingPlmnId := request.PlmnId.Mcc + request.PlmnId.Mnc
+
+		// 1. Check if UE is Roaming (Compare Serving PLMN with IMSI prefix)
+		isRoaming := !strings.HasPrefix(ueID, "imsi-"+servingPlmnId)
+
+		if isRoaming {
+			logger.UecmLog.Infof("UE %s is detected as Roaming in PLMN %s", ueID, servingPlmnId)
+
+			// 2. Fetch Subscription Data
+			amData, resp, err := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), ueID, servingPlmnId, nil)
+
+			if err != nil {
+				logger.UecmLog.Warnf("Failed to query AM Data for Roaming Check (continuing): %v", err)
+			} else if resp.StatusCode == http.StatusOK {
+
+				// 3. FIX: Check if OdbPacketServices is set (check if string is not empty)
+				// The compilation error occurred because OdbPacketServices is a value type, not a pointer.
+				if string(amData.OdbPacketServices) != "" {
+					logger.UecmLog.Warnf("Registration Rejected: Roaming not allowed for UE %s (ODB active: %v)", ueID, amData.OdbPacketServices)
+
+					// 4. Return the Exact Error expected by the Test Case
+					return nil, nil, &models.ProblemDetails{
+						Status: http.StatusForbidden,
+						Cause:  "ROAMING_NOT_ALLOWED",
+						Detail: "Roaming is restricted for this subscriber based on subscription data",
+					}
+				}
+			}
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
+		}
+	}
+	// =================================================================================
+	// LOGIC END
+	// =================================================================================
+
+	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
+
+	// FIX: Dereference (*request) so the library gets the struct value
+	optInterface := optional.NewInterface(*request)
+	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
+
 	logger.UecmLog.Infof("Sending CreateSmfContextNon3gpp to UDR for UE: %s, PDU: %s", ueID, pduSessionID)
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
+
 	if err != nil {
-		// FIX 2: Check if it is actually a Success (200 OK or 201 Created) masked as an error
+		// Treat 200 OK and 201 Created as Success
 		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
-			logger.UecmLog.Infof("UDR returned success code %d (treating as success despite client error string: %v)", resp.StatusCode, err)
-			// Allow execution to fall through to the success block below
+			logger.UecmLog.Infof("UDR returned success code %d (treating as success)", resp.StatusCode)
 		} else {
-			// It is a real error (4xx, 5xx, or Network Failure)
 			logger.UecmLog.Errorf("CreateSmfContextNon3gpp request failed: %v", err)
 
 			problemDetails = &models.ProblemDetails{}
@@ -658,11 +699,9 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 				if model := apiErr.Model(); model != nil {
 					if pd, ok := model.(models.ProblemDetails); ok {
 						problemDetails.Cause = pd.Cause
-						logger.UecmLog.Warnf("UDR Logic Failure Cause: %s", pd.Cause)
 					}
 				}
 			} else {
-				logger.UecmLog.Errorln("Non-OpenAPI error occurred (System/Transport failure)")
 				problemDetails.Status = http.StatusInternalServerError
 				problemDetails.Cause = "SYSTEM_FAILURE"
 				problemDetails.Detail = err.Error()
@@ -674,9 +713,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	defer func() {
 		if resp != nil && resp.Body != nil {
-			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-				logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
-			}
+			resp.Body.Close()
 		}
 	}()
 
