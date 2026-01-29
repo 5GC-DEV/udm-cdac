@@ -639,9 +639,10 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 			logger.UecmLog.Infof("UE %s is detected as Roaming in PLMN %s", ueID, servingPlmnId)
 
 			// 2. Query Subscription Data
-			amData, resp, err := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), ueID, servingPlmnId, nil)
+			// FIX: Use 'errQuery' to avoid shadowing the outer 'err' variable
+			amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), ueID, servingPlmnId, nil)
 
-			if err != nil {
+			if errQuery != nil {
 				// FIX: If UDR returns 404 (Data Not Found), it means Roaming is NOT configured for this PLMN -> Reject.
 				if resp != nil && resp.StatusCode == http.StatusNotFound {
 					logger.UecmLog.Warnf("Registration Rejected: No Subscription Data found for UE %s in PLMN %s", ueID, servingPlmnId)
@@ -652,10 +653,8 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 						Detail: "No subscription data found for the serving PLMN",
 					}
 				}
-
 				// Log other errors but continue (fail-open for network glitches, etc.)
-				logger.UecmLog.Warnf("Failed to query AM Data for Roaming Check (continuing): %v", err)
-
+				logger.UecmLog.Warnf("Failed to query AM Data for Roaming Check (continuing): %v", errQuery)
 			} else if resp.StatusCode == http.StatusOK {
 				// 3. Check for specific ODB restrictions in the returned data
 				if string(amData.OdbPacketServices) != "" {
@@ -719,7 +718,9 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	defer func() {
 		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
+			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
+				logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
+			}
 		}
 	}()
 
@@ -727,10 +728,9 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	if contextExisted {
 		return nil, nil, nil
-	} else {
-		header = make(http.Header)
-		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
-		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
-		return header, request, nil
 	}
+	header = make(http.Header)
+	udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
+	header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
+	return header, request, nil
 }
