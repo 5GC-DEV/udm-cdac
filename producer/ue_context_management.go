@@ -618,7 +618,6 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	}
 	pduID32 := int32(pduID64)
 
-	// Create the Client
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
 		logger.UecmLog.Errorf("Failed to create UDM client for UDR: %v", err)
@@ -631,23 +630,35 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	if request.PlmnId != nil {
 		servingPlmnId := request.PlmnId.Mcc + request.PlmnId.Mnc
 
-		// 1. Check if UE is Roaming (Compare Serving PLMN with IMSI prefix)
+		// 1. Check if UE is Roaming
 		isRoaming := !strings.HasPrefix(ueID, "imsi-"+servingPlmnId)
+
 		if isRoaming {
 			logger.UecmLog.Infof("UE %s is detected as Roaming in PLMN %s", ueID, servingPlmnId)
 
-			// 2. Fetch Subscription Data
+			// 2. Query Subscription Data
 			amData, resp, err := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), ueID, servingPlmnId, nil)
-			if err != nil {
-				logger.UecmLog.Warnf("Failed to query AM Data for Roaming Check (continuing): %v", err)
-			} else if resp.StatusCode == http.StatusOK {
 
-				// 3. FIX: Check if OdbPacketServices is set (check if string is not empty)
-				// The compilation error occurred because OdbPacketServices is a value type, not a pointer.
+			if err != nil {
+				// FIX: If UDR returns 404 (Data Not Found), it means Roaming is NOT configured for this PLMN -> Reject.
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					logger.UecmLog.Warnf("Registration Rejected: No Subscription Data found for UE %s in PLMN %s", ueID, servingPlmnId)
+
+					return nil, nil, &models.ProblemDetails{
+						Status: http.StatusForbidden,
+						Cause:  "ROAMING_NOT_ALLOWED",
+						Detail: "No subscription data found for the serving PLMN",
+					}
+				}
+
+				// Log other errors but continue (fail-open for network glitches, etc.)
+				logger.UecmLog.Warnf("Failed to query AM Data for Roaming Check (continuing): %v", err)
+
+			} else if resp.StatusCode == http.StatusOK {
+				// 3. Check for specific ODB restrictions in the returned data
 				if string(amData.OdbPacketServices) != "" {
 					logger.UecmLog.Warnf("Registration Rejected: Roaming not allowed for UE %s (ODB active: %v)", ueID, amData.OdbPacketServices)
 
-					// 4. Return the Exact Error expected by the Test Case
 					return nil, nil, &models.ProblemDetails{
 						Status: http.StatusForbidden,
 						Cause:  "ROAMING_NOT_ALLOWED",
@@ -655,6 +666,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 					}
 				}
 			}
+
 			if resp != nil && resp.Body != nil {
 				resp.Body.Close()
 			}
@@ -665,8 +677,6 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	// =================================================================================
 
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-
-	// FIX: Dereference (*request) so the library gets the struct value
 	optInterface := optional.NewInterface(*request)
 	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
 
@@ -676,12 +686,10 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		pduID32, &createSmfContextNon3gppParamOpts)
 
 	if err != nil {
-		// Treat 200 OK and 201 Created as Success
 		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
 			logger.UecmLog.Infof("UDR returned success code %d (treating as success)", resp.StatusCode)
 		} else {
 			logger.UecmLog.Errorf("CreateSmfContextNon3gpp request failed: %v", err)
-
 			problemDetails = &models.ProblemDetails{}
 
 			if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
@@ -691,7 +699,6 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 				} else {
 					problemDetails.Status = http.StatusInternalServerError
 				}
-
 				problemDetails.Detail = err.Error()
 
 				if model := apiErr.Model(); model != nil {
@@ -704,7 +711,6 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 				problemDetails.Cause = "SYSTEM_FAILURE"
 				problemDetails.Detail = err.Error()
 			}
-
 			return nil, nil, problemDetails
 		}
 	}
