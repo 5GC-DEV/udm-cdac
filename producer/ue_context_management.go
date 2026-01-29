@@ -594,8 +594,6 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
 		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "FAILURE")
-		problemHeader := make(http.Header)
-		problemHeader.Set("Content-Type", "application/problem+json")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
 		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")

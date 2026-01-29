@@ -75,6 +75,11 @@ func HTTPRegistrationSmfRegistrations(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		contentType := "application/json"
+		if rsp.Status >= 400 {
+			contentType = "application/problem+json"
+		}
+
+		c.Data(rsp.Status, contentType, responseBody)
 	}
 }
