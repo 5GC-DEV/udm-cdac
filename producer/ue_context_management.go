@@ -633,13 +633,11 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 		// 1. Check if UE is Roaming (Compare Serving PLMN with IMSI prefix)
 		isRoaming := !strings.HasPrefix(ueID, "imsi-"+servingPlmnId)
-
 		if isRoaming {
 			logger.UecmLog.Infof("UE %s is detected as Roaming in PLMN %s", ueID, servingPlmnId)
 
 			// 2. Fetch Subscription Data
 			amData, resp, err := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), ueID, servingPlmnId, nil)
-
 			if err != nil {
 				logger.UecmLog.Warnf("Failed to query AM Data for Roaming Check (continuing): %v", err)
 			} else if resp.StatusCode == http.StatusOK {
