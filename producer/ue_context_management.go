@@ -620,7 +620,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
 
-	// FIX: Dereference (*request) so the library gets the struct value, not the pointer
+	// FIX 1: Dereference (*request) so the library gets the struct value
 	optInterface := optional.NewInterface(*request)
 	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
 
@@ -634,45 +634,42 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
-
 	if err != nil {
-		// Log the raw error first
-		logger.UecmLog.Errorf("CreateSmfContextNon3gpp request failed: %v", err)
-
-		// 1. Initialize memory to prevent Nil Pointer Panic
-		problemDetails = &models.ProblemDetails{}
-
-		// 2. Safe Type Assertion (Comma-ok idiom) to prevent Type Assertion Panic
-		if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-
-			// It is a valid response from UDR (e.g., 403 Forbidden, 404 Not Found)
-			if resp != nil {
-				problemDetails.Status = int32(resp.StatusCode)
-				logger.UecmLog.Warnf("UDR returned HTTP Status: %d", resp.StatusCode)
-			} else {
-				problemDetails.Status = http.StatusInternalServerError
-			}
-
-			problemDetails.Detail = err.Error()
-
-			// Safely try to extract the inner Cause from the UDR JSON body
-			if model := apiErr.Model(); model != nil {
-				if pd, ok := model.(models.ProblemDetails); ok {
-					problemDetails.Cause = pd.Cause
-					logger.UecmLog.Warnf("UDR Logic Failure Cause: %s", pd.Cause)
-				} else {
-					logger.UecmLog.Warnln("UDR error model could not be cast to ProblemDetails")
-				}
-			}
+		// FIX 2: Check if it is actually a Success (200 OK or 201 Created) masked as an error
+		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
+			logger.UecmLog.Infof("UDR returned success code %d (treating as success despite client error string: %v)", resp.StatusCode, err)
+			// Allow execution to fall through to the success block below
 		} else {
-			// 3. Fallback for System/Transport errors (e.g., Connection Refused, DNS failure)
-			logger.UecmLog.Errorln("Non-OpenAPI error occurred (System/Transport failure)")
-			problemDetails.Status = http.StatusInternalServerError
-			problemDetails.Cause = "SYSTEM_FAILURE"
-			problemDetails.Detail = err.Error()
-		}
+			// It is a real error (4xx, 5xx, or Network Failure)
+			logger.UecmLog.Errorf("CreateSmfContextNon3gpp request failed: %v", err)
 
-		return nil, nil, problemDetails
+			problemDetails = &models.ProblemDetails{}
+
+			if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+				if resp != nil {
+					problemDetails.Status = int32(resp.StatusCode)
+					logger.UecmLog.Warnf("UDR returned HTTP Status: %d", resp.StatusCode)
+				} else {
+					problemDetails.Status = http.StatusInternalServerError
+				}
+
+				problemDetails.Detail = err.Error()
+
+				if model := apiErr.Model(); model != nil {
+					if pd, ok := model.(models.ProblemDetails); ok {
+						problemDetails.Cause = pd.Cause
+						logger.UecmLog.Warnf("UDR Logic Failure Cause: %s", pd.Cause)
+					}
+				}
+			} else {
+				logger.UecmLog.Errorln("Non-OpenAPI error occurred (System/Transport failure)")
+				problemDetails.Status = http.StatusInternalServerError
+				problemDetails.Cause = "SYSTEM_FAILURE"
+				problemDetails.Detail = err.Error()
+			}
+
+			return nil, nil, problemDetails
+		}
 	}
 
 	defer func() {
