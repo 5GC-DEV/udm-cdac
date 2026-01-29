@@ -614,7 +614,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	pduID64, err := strconv.ParseInt(pduSessionID, 10, 32)
 	if err != nil {
-		logger.UecmLog.Errorln(err.Error())
+		logger.UecmLog.Errorln("Failed to parse PDU Session ID:", err.Error())
 	}
 	pduID32 := int32(pduID64)
 
@@ -624,38 +624,64 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
+		logger.UecmLog.Errorf("Failed to create UDM client for UDR: %v", err)
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
+
+	logger.UecmLog.Infof("Sending CreateSmfContextNon3gpp to UDR for UE: %s, PDU: %s", ueID, pduSessionID)
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
 
 	if err != nil {
-		// 1. Initialize the struct first to avoid the panic
+		// Log the raw error first
+		logger.UecmLog.Errorf("CreateSmfContextNon3gpp request failed: %v", err)
+
+		// 1. Initialize memory to prevent Nil Pointer Panic
 		problemDetails = &models.ProblemDetails{}
 
-		// 2. Safely check if the error contains a Model with a Cause
-		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-			if model, ok := openApiErr.Model().(models.ProblemDetails); ok {
-				problemDetails.Cause = model.Cause
+		// 2. Safe Type Assertion (Comma-ok idiom) to prevent Type Assertion Panic
+		if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+
+			// It is a valid response from UDR (e.g., 403 Forbidden, 404 Not Found)
+			if resp != nil {
+				problemDetails.Status = int32(resp.StatusCode)
+				logger.UecmLog.Warnf("UDR returned HTTP Status: %d", resp.StatusCode)
+			} else {
+				problemDetails.Status = http.StatusInternalServerError
 			}
-		}
 
-		// 3. Set the status code from the response if available
-		if resp != nil {
-			problemDetails.Status = int32(resp.StatusCode)
+			problemDetails.Detail = err.Error()
+
+			// Safely try to extract the inner Cause from the UDR JSON body
+			if model := apiErr.Model(); model != nil {
+				if pd, ok := model.(models.ProblemDetails); ok {
+					problemDetails.Cause = pd.Cause
+					logger.UecmLog.Warnf("UDR Logic Failure Cause: %s", pd.Cause)
+				} else {
+					logger.UecmLog.Warnln("UDR error model could not be cast to ProblemDetails")
+				}
+			}
 		} else {
+			// 3. Fallback for System/Transport errors (e.g., Connection Refused, DNS failure)
+			logger.UecmLog.Errorln("Non-OpenAPI error occurred (System/Transport failure)")
 			problemDetails.Status = http.StatusInternalServerError
+			problemDetails.Cause = "SYSTEM_FAILURE"
+			problemDetails.Detail = err.Error()
 		}
 
-		problemDetails.Detail = err.Error()
 		return nil, nil, problemDetails
 	}
+
 	defer func() {
-		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-			logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
+		if resp != nil && resp.Body != nil {
+			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
+				logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
+			}
 		}
 	}()
+
+	logger.UecmLog.Infoln("CreateSmfContextNon3gpp successful")
 
 	if contextExisted {
 		return nil, nil, nil
