@@ -685,7 +685,6 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
-
 	if err != nil {
 		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
 			logger.UecmLog.Infof("UDR returned success code %d (treating as success)", resp.StatusCode)
