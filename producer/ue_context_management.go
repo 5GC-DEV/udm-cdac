@@ -583,149 +583,143 @@ func DeregistrationSmfRegistrationsProcedure(ueID string, pduSessionID string) (
 
 // HandleRegistrationSmfRegistrationsRequest SmfRegistrations
 func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
-	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 	registerRequest := request.Body.(models.SmfRegistration)
 	ueID := request.Params["ueId"]
 	pduSessionID := request.Params["pduSessionId"]
+
 	header, response, problemDetails := RegistrationSmfRegistrationsProcedure(&registerRequest, ueID, pduSessionID)
-	if response != nil {
-		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
-		// status code is based on SPEC, and option headers
-		return httpwrapper.NewResponse(http.StatusCreated, header, response)
-	} else if problemDetails != nil {
-		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "FAILURE")
-		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
-	} else {
-		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
-		// all nil
-		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
+
+	if problemDetails != nil {
+		// Proper 3GPP Error Content-Type (TS 29.571)
+		errHeader := make(http.Header)
+		errHeader.Set("Content-Type", "application/problem+json")
+		return httpwrapper.NewResponse(int(problemDetails.Status), errHeader, problemDetails)
 	}
+
+	if response != nil {
+		return httpwrapper.NewResponse(http.StatusCreated, header, response)
+	}
+
+	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
-// RegistrationSmfRegistrationsProcedure SmfRegistrationsProcedure
+// RegistrationSmfRegistrationsProcedure follows 3GPP TS 29.503 Section 5.3.2.10
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
-	contextExisted := false
-	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
-	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
-		contextExisted = true
-	}
-
-	pduID64, err := strconv.ParseInt(pduSessionID, 10, 32)
-	if err != nil {
-		logger.UecmLog.Errorln("Failed to parse PDU Session ID:", err.Error())
-	}
-	pduID32 := int32(pduID64)
-
+	// 1. Setup UDR Client
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
-		logger.UecmLog.Errorf("Failed to create UDM client for UDR: %v", err)
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	// =================================================================================
-	// LOGIC START: Roaming Restriction Check
-	// =================================================================================
+	// 2. Official Roaming Authorization (TS 23.501 Section 5.3.4.1)
 	if request.PlmnId != nil {
-		servingPlmnId := request.PlmnId.Mcc + request.PlmnId.Mnc
+		servingPlmn := request.PlmnId.Mcc + request.PlmnId.Mnc
 
-		// 1. Check if UE is Roaming
-		isRoaming := !strings.HasPrefix(ueID, "imsi-"+servingPlmnId)
+		// Query AM Data for this specific Serving PLMN
+		amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
+			QueryAmData(context.Background(), ueID, servingPlmn, nil)
 
-		if isRoaming {
-			logger.UecmLog.Infof("UE %s is detected as Roaming in PLMN %s", ueID, servingPlmnId)
-
-			// 2. Query Subscription Data
-			// FIX: Use 'errQuery' to avoid shadowing the outer 'err' variable
-			amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), ueID, servingPlmnId, nil)
-
-			if errQuery != nil {
-				// FIX: If UDR returns 404 (Data Not Found), it means Roaming is NOT configured for this PLMN -> Reject.
-				if resp != nil && resp.StatusCode == http.StatusNotFound {
-					logger.UecmLog.Warnf("Registration Rejected: No Subscription Data found for UE %s in PLMN %s", ueID, servingPlmnId)
-
-					return nil, nil, &models.ProblemDetails{
-						Status: http.StatusForbidden,
-						Cause:  "ROAMING_NOT_ALLOWED",
-						Detail: "No subscription data found for the serving PLMN",
-					}
+		if errQuery != nil {
+			// SPEC: If no subscription data exists for this PLMN, roaming is not authorized
+			if resp != nil && resp.StatusCode == http.StatusNotFound {
+				logger.UecmLog.Warnf("Roaming Unauthorized: No profile for PLMN %s", servingPlmn)
+				return nil, nil, &models.ProblemDetails{
+					Status: http.StatusForbidden,
+					Cause:  "ROAMING_NOT_ALLOWED",
+					Detail: "Subscriber has no roaming agreement with the serving network",
 				}
-				// Log other errors but continue (fail-open for network glitches, etc.)
-				logger.UecmLog.Warnf("Failed to query AM Data for Roaming Check (continuing): %v", errQuery)
-			} else if resp.StatusCode == http.StatusOK {
-				// 3. Check for specific ODB restrictions in the returned data
-				if string(amData.OdbPacketServices) != "" {
-					logger.UecmLog.Warnf("Registration Rejected: Roaming not allowed for UE %s (ODB active: %v)", ueID, amData.OdbPacketServices)
-
-					return nil, nil, &models.ProblemDetails{
-						Status: http.StatusForbidden,
-						Cause:  "ROAMING_NOT_ALLOWED",
-						Detail: "Roaming is restricted for this subscriber based on subscription data",
-					}
+			}
+		} else if resp.StatusCode == http.StatusOK {
+			// 3. Check Operator Determined Barring (ODB) for Roaming
+			// 3GPP TS 29.503 Section 6.1.7.3: ROAMING_NOT_ALLOWED is sent if ODB blocks the service
+			if string(amData.OdbPacketServices) != "" {
+				logger.UecmLog.Warnf("Roaming Rejected: ODB active (%v)", amData.OdbPacketServices)
+				return nil, nil, &models.ProblemDetails{
+					Status: http.StatusForbidden,
+					Cause:  "ROAMING_NOT_ALLOWED",
+					Detail: "Roaming is barred by operator determined barring (ODB)",
 				}
 			}
 
-			if resp != nil && resp.Body != nil {
-				resp.Body.Close()
+			// 4. Check Roaming Restrictions Object (if populated)
+			var isRoaming bool
+			var servingPlmnId string
+
+			if request.PlmnId != nil {
+				servingPlmnId = request.PlmnId.Mcc + request.PlmnId.Mnc
+				// Roaming Check: If IMSI prefix doesn't match the Serving PLMN
+				isRoaming = !strings.HasPrefix(ueID, "imsi-"+servingPlmnId)
+			}
+
+			if isRoaming {
+				logger.UecmLog.Infof("UE %s is detected as Roaming in PLMN %s", ueID, servingPlmnId)
+
+				// 1. Fetch Subscription Data (Access And Mobility)
+				amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
+					QueryAmData(context.Background(), ueID, servingPlmnId, nil)
+
+				if errQuery != nil {
+					// Proper Check 1: If UDR returns 404, there is no roaming agreement for this PLMN
+					if resp != nil && resp.StatusCode == http.StatusNotFound {
+						logger.UecmLog.Warnf("Registration Rejected: No profile for PLMN %s", servingPlmnId)
+						return nil, nil, &models.ProblemDetails{
+							Status: http.StatusForbidden,
+							Cause:  "ROAMING_NOT_ALLOWED",
+							Detail: "Subscriber has no roaming agreement with the serving network",
+						}
+					}
+					logger.UecmLog.Warnf("Failed to query AM Data: %v", errQuery)
+				} else if resp.StatusCode == http.StatusOK {
+					// Proper Check 2: Check OdbPacketServices (Operator Determined Barring)
+					// Cast to string to check if it's populated
+					if string(amData.OdbPacketServices) != "" {
+						logger.UecmLog.Warnf("Registration Rejected: ODB active (%v)", amData.OdbPacketServices)
+						return nil, nil, &models.ProblemDetails{
+							Status: http.StatusForbidden,
+							Cause:  "ROAMING_NOT_ALLOWED",
+							Detail: "Roaming is barred by operator determined barring (ODB)",
+						}
+					}
+				}
+
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
 			}
 		}
 	}
-	// =================================================================================
-	// LOGIC END
-	// =================================================================================
+	// 5. Proceed with Registration if authorized
+	pduID64, _ := strconv.ParseInt(pduSessionID, 10, 32)
+	pduID32 := int32(pduID64)
 
-	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-	optInterface := optional.NewInterface(*request)
-	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
+	var opts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
+	opts.SmfRegistration = optional.NewInterface(*request)
 
-	logger.UecmLog.Infof("Sending CreateSmfContextNon3gpp to UDR for UE: %s, PDU: %s", ueID, pduSessionID)
+	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID, pduID32, &opts)
 
-	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
-		pduID32, &createSmfContextNon3gppParamOpts)
 	if err != nil {
+		// Handle non-standard 200/201 "errors" from library
 		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
-			logger.UecmLog.Infof("UDR returned success code %d (treating as success)", resp.StatusCode)
+			logger.UecmLog.Debugln("UDR saved successfully")
 		} else {
-			logger.UecmLog.Errorf("CreateSmfContextNon3gpp request failed: %v", err)
-			problemDetails = &models.ProblemDetails{}
-
+			// Proper ProblemDetails Extraction
+			problemDetails = &models.ProblemDetails{Status: http.StatusInternalServerError}
 			if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-				if resp != nil {
-					problemDetails.Status = int32(resp.StatusCode)
-					logger.UecmLog.Warnf("UDR returned HTTP Status: %d", resp.StatusCode)
-				} else {
-					problemDetails.Status = http.StatusInternalServerError
+				if pd, ok := apiErr.Model().(models.ProblemDetails); ok {
+					problemDetails = &pd
 				}
-				problemDetails.Detail = err.Error()
-
-				if model := apiErr.Model(); model != nil {
-					if pd, ok := model.(models.ProblemDetails); ok {
-						problemDetails.Cause = pd.Cause
-					}
-				}
-			} else {
-				problemDetails.Status = http.StatusInternalServerError
-				problemDetails.Cause = "SYSTEM_FAILURE"
-				problemDetails.Detail = err.Error()
 			}
 			return nil, nil, problemDetails
 		}
 	}
 
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-				logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
-			}
-		}
-	}()
-
-	logger.UecmLog.Infoln("CreateSmfContextNon3gpp successful")
-
-	if contextExisted {
-		return nil, nil, nil
+	// Cleanup and Success Response
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
 	}
+
 	header = make(http.Header)
 	udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 	header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
