@@ -632,9 +632,22 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 
 		pd := openapiErr.Model().(models.ProblemDetails)
 
+		// Default
 		status := http.StatusInternalServerError
+
 		if resp != nil {
-			status = resp.StatusCode
+			switch resp.StatusCode {
+			case http.StatusNotFound:
+				// UDR: UE/subscription not found
+				// UDM must convert this to 403 as per 3GPP
+				return nil, nil, &models.ProblemDetails{
+					Status: http.StatusForbidden,
+					Cause:  "NO_REQUIRED_SUBSCRIPTION_DATA",
+					Detail: "Required SMF subscription data not found",
+				}
+			default:
+				status = resp.StatusCode
+			}
 		}
 
 		return nil, nil, &models.ProblemDetails{
