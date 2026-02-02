@@ -625,14 +625,25 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
 		pduID32, &createSmfContextNon3gppParamOpts)
 	if err != nil {
-		problemDetails.Cause = err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause
-		problemDetails = &models.ProblemDetails{
-			Status: int32(resp.StatusCode),
-			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-			Detail: err.Error(),
+		openapiErr, ok := err.(openapi.GenericOpenAPIError)
+		if !ok {
+			return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 		}
-		return nil, nil, problemDetails
+
+		pd := openapiErr.Model().(models.ProblemDetails)
+
+		status := http.StatusInternalServerError
+		if resp != nil {
+			status = resp.StatusCode
+		}
+
+		return nil, nil, &models.ProblemDetails{
+			Status: int32(status),
+			Cause:  pd.Cause,
+			Detail: openapiErr.Error(),
+		}
 	}
+
 	defer func() {
 		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
 			logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
