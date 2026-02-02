@@ -29,7 +29,6 @@ import (
 func HTTPRegistrationSmfRegistrations(c *gin.Context) {
 	var smfRegistration models.SmfRegistration
 
-	// step 1: retrieve http request body
 	requestBody, err := c.GetRawData()
 	if err != nil {
 		problemDetail := models.ProblemDetails{
@@ -39,11 +38,11 @@ func HTTPRegistrationSmfRegistrations(c *gin.Context) {
 			Cause:  "SYSTEM_FAILURE",
 		}
 		logger.UecmLog.Errorf("Get Request Body error: %+v", err)
+		c.Header("Content-Type", "application/problem+json")
 		c.JSON(http.StatusInternalServerError, problemDetail)
 		return
 	}
 
-	// step 2: convert requestBody to openapi models
 	err = openapi.Deserialize(&smfRegistration, requestBody, "application/json")
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
@@ -53,18 +52,22 @@ func HTTPRegistrationSmfRegistrations(c *gin.Context) {
 			Detail: problemDetail,
 		}
 		logger.UecmLog.Errorln(problemDetail)
+		c.Header("Content-Type", "application/problem+json")
 		c.JSON(http.StatusBadRequest, rsp)
 		return
 	}
+
 	req := httpwrapper.NewRequest(c.Request, smfRegistration)
 	req.Params["ueId"] = c.Params.ByName("ueId")
 	req.Params["pduSessionId"] = c.Params.ByName("pduSessionId")
 
 	rsp := producer.HandleRegistrationSmfRegistrationsRequest(req)
-	// step 5: response
-	for key, val := range rsp.Header { // header response is optional
+
+	// Optional headers (Location etc.)
+	for key, val := range rsp.Header {
 		c.Header(key, val[0])
 	}
+
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
 		logger.UecmLog.Errorln(err)
@@ -73,8 +76,16 @@ func HTTPRegistrationSmfRegistrations(c *gin.Context) {
 			Cause:  "SYSTEM_FAILURE",
 			Detail: err.Error(),
 		}
+		c.Header("Content-Type", "application/problem+json")
 		c.JSON(http.StatusInternalServerError, problemDetails)
-	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		return
 	}
+
+	// 🔑 Content-Type decision
+	contentType := "application/json"
+	if _, ok := rsp.Body.(*models.ProblemDetails); ok {
+		contentType = "application/problem+json"
+	}
+
+	c.Data(rsp.Status, contentType, responseBody)
 }
