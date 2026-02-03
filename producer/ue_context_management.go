@@ -18,6 +18,7 @@ import (
 	"github.com/antihax/optional"
 	"github.com/omec-project/udm/consumer"
 	udmContext "github.com/omec-project/udm/context"
+	"github.com/omec-project/udm/factory"
 	"github.com/omec-project/udm/logger"
 	stats "github.com/omec-project/udm/metrics"
 	"github.com/omec-project/udm/producer/callback"
@@ -590,7 +591,7 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 	header, response, problemDetails := RegistrationSmfRegistrationsProcedure(&registerRequest, ueID, pduSessionID)
 
 	if problemDetails != nil {
-		// Proper 3GPP Error Content-Type (TS 29.571)
+		// Proper 3GPP Content-Type for Errors (TS 29.571)
 		errHeader := make(http.Header)
 		errHeader.Set("Content-Type", "application/problem+json")
 		return httpwrapper.NewResponse(int(problemDetails.Status), errHeader, problemDetails)
@@ -607,90 +608,70 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
-	// 1. Setup UDR Client
+	// 1. Update Local UDM Context
+	contextExisted := false
+	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
+	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
+		contextExisted = true
+	}
+
+	// 2. Setup UDR Client
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	// 2. Official Roaming Authorization (TS 23.501 Section 5.3.4.1)
+	// 3. PROPER 3GPP ROAMING CHECK (Multi-PLMN Support)
+	isRoaming := true // Default to roaming
 	if request.PlmnId != nil {
-		servingPlmn := request.PlmnId.Mcc + request.PlmnId.Mnc
+		servingPlmn := request.PlmnId
 
-		// Query AM Data for this specific Serving PLMN
-		amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
-			QueryAmData(context.Background(), ueID, servingPlmn, nil)
-
-		if errQuery != nil {
-			// SPEC: If no subscription data exists for this PLMN, roaming is not authorized
-			if resp != nil && resp.StatusCode == http.StatusNotFound {
-				logger.UecmLog.Warnf("Roaming Unauthorized: No profile for PLMN %s", servingPlmn)
-				return nil, nil, &models.ProblemDetails{
-					Status: http.StatusForbidden,
-					Cause:  "ROAMING_NOT_ALLOWED",
-					Detail: "Subscriber has no roaming agreement with the serving network",
-				}
+		// Check if the Serving PLMN is one of our configured Home PLMNs
+		for _, homePlmn := range factory.UdmConfig.Configuration.PlmnSupportList {
+			if servingPlmn.Mcc == homePlmn.Mcc && servingPlmn.Mnc == homePlmn.Mnc {
+				isRoaming = false // Match found: This is a Home Network registration
+				break
 			}
-		} else if resp.StatusCode == http.StatusOK {
-			// 3. Check Operator Determined Barring (ODB) for Roaming
-			// 3GPP TS 29.503 Section 6.1.7.3: ROAMING_NOT_ALLOWED is sent if ODB blocks the service
-			if string(amData.OdbPacketServices) != "" {
-				logger.UecmLog.Warnf("Roaming Rejected: ODB active (%v)", amData.OdbPacketServices)
-				return nil, nil, &models.ProblemDetails{
-					Status: http.StatusForbidden,
-					Cause:  "ROAMING_NOT_ALLOWED",
-					Detail: "Roaming is barred by operator determined barring (ODB)",
-				}
-			}
+		}
 
-			// 4. Check Roaming Restrictions Object (if populated)
-			var isRoaming bool
-			var servingPlmnId string
+		if isRoaming {
+			servingPlmnStr := servingPlmn.Mcc + servingPlmn.Mnc
+			logger.UecmLog.Infof("UE %s: Roaming detected (Serving PLMN %s is not in Home Support List)",
+				ueID, servingPlmnStr)
 
-			if request.PlmnId != nil {
-				servingPlmnId = request.PlmnId.Mcc + request.PlmnId.Mnc
-				// Roaming Check: If IMSI prefix doesn't match the Serving PLMN
-				isRoaming = !strings.HasPrefix(ueID, "imsi-"+servingPlmnId)
-			}
+			// 4. Query UDR for Subscription Data for this specific Visited PLMN
+			amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
+				QueryAmData(context.Background(), ueID, servingPlmnStr, nil)
 
-			if isRoaming {
-				logger.UecmLog.Infof("UE %s is detected as Roaming in PLMN %s", ueID, servingPlmnId)
-
-				// 1. Fetch Subscription Data (Access And Mobility)
-				amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
-					QueryAmData(context.Background(), ueID, servingPlmnId, nil)
-
-				if errQuery != nil {
-					// Proper Check 1: If UDR returns 404, there is no roaming agreement for this PLMN
-					if resp != nil && resp.StatusCode == http.StatusNotFound {
-						logger.UecmLog.Warnf("Registration Rejected: No profile for PLMN %s", servingPlmnId)
-						return nil, nil, &models.ProblemDetails{
-							Status: http.StatusForbidden,
-							Cause:  "ROAMING_NOT_ALLOWED",
-							Detail: "Subscriber has no roaming agreement with the serving network",
-						}
-					}
-					logger.UecmLog.Warnf("Failed to query AM Data: %v", errQuery)
-				} else if resp.StatusCode == http.StatusOK {
-					// Proper Check 2: Check OdbPacketServices (Operator Determined Barring)
-					// Cast to string to check if it's populated
-					if string(amData.OdbPacketServices) != "" {
-						logger.UecmLog.Warnf("Registration Rejected: ODB active (%v)", amData.OdbPacketServices)
-						return nil, nil, &models.ProblemDetails{
-							Status: http.StatusForbidden,
-							Cause:  "ROAMING_NOT_ALLOWED",
-							Detail: "Roaming is barred by operator determined barring (ODB)",
-						}
+			if errQuery != nil {
+				// SPEC: 404 means no roaming agreement/data exists for this VPLMN
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					logger.UecmLog.Warnf("Roaming Unauthorized: No profile for PLMN %s", servingPlmnStr)
+					return nil, nil, &models.ProblemDetails{
+						Status: http.StatusForbidden,
+						Cause:  "ROAMING_NOT_ALLOWED",
+						Detail: "Roaming not authorized: No subscription data for this VPLMN",
 					}
 				}
-
-				if resp != nil && resp.Body != nil {
-					resp.Body.Close()
+				logger.UecmLog.Warnf("UDR Query error: %v", errQuery)
+			} else if resp.StatusCode == http.StatusOK {
+				// 5. Check Operator Determined Barring (ODB)
+				if string(amData.OdbPacketServices) != "" {
+					logger.UecmLog.Warnf("Roaming Rejected: ODB active (%v)", amData.OdbPacketServices)
+					return nil, nil, &models.ProblemDetails{
+						Status: http.StatusForbidden,
+						Cause:  "ROAMING_NOT_ALLOWED",
+						Detail: "Roaming blocked by Operator Determined Barring (ODB)",
+					}
 				}
+			}
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
 			}
 		}
 	}
-	// 5. Proceed with Registration if authorized
+
+	// 6. Proceed with Registration in UDR if authorized
 	pduID64, _ := strconv.ParseInt(pduSessionID, 10, 32)
 	pduID32 := int32(pduID64)
 
@@ -698,28 +679,30 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	opts.SmfRegistration = optional.NewInterface(*request)
 
 	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID, pduID32, &opts)
-
 	if err != nil {
-		// Handle non-standard 200/201 "errors" from library
 		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
 			logger.UecmLog.Debugln("UDR saved successfully")
 		} else {
-			// Proper ProblemDetails Extraction
 			problemDetails = &models.ProblemDetails{Status: http.StatusInternalServerError}
 			if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-				if pd, ok := apiErr.Model().(models.ProblemDetails); ok {
-					problemDetails = &pd
+				if model := apiErr.Model(); model != nil {
+					if pd, ok := model.(models.ProblemDetails); ok {
+						problemDetails = &pd
+					}
 				}
 			}
 			return nil, nil, problemDetails
 		}
 	}
 
-	// Cleanup and Success Response
 	if resp != nil && resp.Body != nil {
 		resp.Body.Close()
 	}
 
+	// 7. Success Response
+	if contextExisted {
+		return nil, nil, nil
+	}
 	header = make(http.Header)
 	udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 	header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
