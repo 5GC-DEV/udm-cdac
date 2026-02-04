@@ -581,75 +581,102 @@ func DeregistrationSmfRegistrationsProcedure(ueID string, pduSessionID string) (
 	return nil
 }
 
-// HandleRegistrationSmfRegistrationsRequest SmfRegistrations
 func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.UecmLog.Infoln("handle RegistrationSmfRegistrations")
 	registerRequest := request.Body.(models.SmfRegistration)
 	ueID := request.Params["ueId"]
 	pduSessionID := request.Params["pduSessionId"]
+
 	header, response, problemDetails := RegistrationSmfRegistrationsProcedure(&registerRequest, ueID, pduSessionID)
+
+	if problemDetails != nil {
+		// Proper 3GPP Content-Type for Errors (TS 29.571 Section 5.2.2)
+		errHeader := make(http.Header)
+		errHeader.Set("Content-Type", "application/problem+json")
+		return httpwrapper.NewResponse(int(problemDetails.Status), errHeader, problemDetails)
+	}
+
 	if response != nil {
 		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
-		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
-	} else if problemDetails != nil {
-		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "FAILURE")
-		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
-	} else {
-		stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
-		// all nil
-		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
+
+	stats.IncrementUdmUeContextManagementStats("create", "smf-registrations", "SUCCESS")
+	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
-// RegistrationSmfRegistrationsProcedure SmfRegistrationsProcedure
+// RegistrationSmfRegistrationsProcedure follows 3GPP TS 29.503 Section 5.3.2.10
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
+	// 1. Update Local UDM Context
 	contextExisted := false
 	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
 	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
 		contextExisted = true
 	}
 
-	pduID64, err := strconv.ParseInt(pduSessionID, 10, 32)
-	if err != nil {
-		logger.UecmLog.Errorln(err.Error())
-	}
-	pduID32 := int32(pduID64)
-
-	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
-	optInterface := optional.NewInterface(request)
-	createSmfContextNon3gppParamOpts.SmfRegistration = optInterface
-
+	// 2. Setup UDR Client
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
+		logger.UecmLog.Errorf("UDR Client Creation Failed: %v", err)
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID,
-		pduID32, &createSmfContextNon3gppParamOpts)
-	if err != nil {
-		problemDetails.Cause = err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause
-		problemDetails = &models.ProblemDetails{
-			Status: int32(resp.StatusCode),
-			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-			Detail: err.Error(),
-		}
-		return nil, nil, problemDetails
-	}
-	defer func() {
-		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-			logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
-		}
-	}()
+	/*
+	 * ROAMING CHECK & AUTHORIZATION NOTE:
+	 * ----------------------------------
+	 * In this Private 5G implementation (OMEC project), roaming is currently disabled by design.
+	 * Authentication is performed via the subscriber's presence in the Home UDR.
+	 *
+	 * If Roaming Support is implemented in the future, the following procedure should be followed:
+	 * 1. Identify Roaming: Compare Serving PLMN (request.PlmnId) with Home PLMN (factory.UdmConfig).
+	 * 2. Fetch Authorization: Query AccessAndMobilitySubscriptionData (Nudr_DR_Query) for the Visited PLMN.
+	 * 3. Enforce Restrictions: If data is missing (404) or ODB (Operator Determined Barring) is active,
+	 *    return 403 Forbidden with Cause "ROAMING_NOT_ALLOWED".
+	 *
+	 * References:
+	 * - 3GPP TS 23.501 Section 5.3.4.1 (Roaming Restrictions)
+	 * - 3GPP TS 23.502 Section 4.2.2.2 (Registration Procedures)
+	 * - 3GPP TS 29.503 Section 5.3.2.10.2 (SMF Registration Authorization)
+	 */
 
+	// 3. Proceed with Registration in UDR
+	pduID64, _ := strconv.ParseInt(pduSessionID, 10, 32)
+	pduID32 := int32(pduID64)
+
+	var opts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
+	opts.SmfRegistration = optional.NewInterface(*request)
+
+	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID, pduID32, &opts)
+	if err != nil {
+		// Handle non-standard 200/201 success masked as errors by the library
+		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
+			logger.UecmLog.Debugln("UDR SMF Registration saved successfully")
+		} else {
+			logger.UecmLog.Errorf("CreateSmfContextNon3gpp failed: %v", err)
+			problemDetails = &models.ProblemDetails{Status: http.StatusInternalServerError}
+			if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+				if model := apiErr.Model(); model != nil {
+					if pd, ok := model.(models.ProblemDetails); ok {
+						problemDetails = &pd
+					}
+				}
+			}
+			return nil, nil, problemDetails
+		}
+	}
+
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
+
+	// 4. Build Success Response
 	if contextExisted {
 		return nil, nil, nil
-	} else {
-		header = make(http.Header)
-		udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
-		header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
-		return header, request, nil
 	}
+	header = make(http.Header)
+	udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
+	header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
+	return header, request, nil
 }
