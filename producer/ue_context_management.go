@@ -604,24 +604,22 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
-// RegistrationSmfRegistrationsProcedure follows 3GPP TS 29.503 Section 5.3.2.10
+// RegistrationSmfRegistrationsProcedure
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
-	// 1. Update Local UDM Context
+	// Update Local UDM Context
 	contextExisted := false
 	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
 	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
 		contextExisted = true
 	}
 
-	// 2. Setup UDR Client
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	// 3. PROPER 3GPP ROAMING CHECK (Multi-PLMN Support)
 	isRoaming := true // Default to roaming
 	if request.PlmnId != nil {
 		servingPlmn := request.PlmnId
@@ -639,7 +637,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 			logger.UecmLog.Infof("UE %s: Roaming detected (Serving PLMN %s is not in Home Support List)",
 				ueID, servingPlmnStr)
 
-			// 4. Query UDR for Subscription Data for this specific Visited PLMN
+			// Query UDR for Subscription Data for this specific Visited PLMN
 			amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
 				QueryAmData(context.Background(), ueID, servingPlmnStr, nil)
 
@@ -655,7 +653,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 				}
 				logger.UecmLog.Warnf("UDR Query error: %v", errQuery)
 			} else if resp.StatusCode == http.StatusOK {
-				// 5. Check Operator Determined Barring (ODB)
+				// Check Operator Determined Barring (ODB)
 				if string(amData.OdbPacketServices) != "" {
 					logger.UecmLog.Warnf("Roaming Rejected: ODB active (%v)", amData.OdbPacketServices)
 					return nil, nil, &models.ProblemDetails{
@@ -671,7 +669,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		}
 	}
 
-	// 6. Proceed with Registration in UDR if authorized
+	// Proceed with Registration in UDR if authorized
 	pduID64, _ := strconv.ParseInt(pduSessionID, 10, 32)
 	pduID32 := int32(pduID64)
 
