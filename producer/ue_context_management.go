@@ -605,56 +605,84 @@ func HandleRegistrationSmfRegistrationsRequest(request *httpwrapper.Request) *ht
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
-// RegistrationSmfRegistrationsProcedure follows 3GPP TS 29.503 Section 5.3.2.10
+// RegistrationSmfRegistrationsProcedure
 func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID string, pduSessionID string) (
 	header http.Header, response *models.SmfRegistration, problemDetails *models.ProblemDetails,
 ) {
-	// 1. Update Local UDM Context
+	// Maintain local UDM state
 	contextExisted := false
 	udmContext.UDM_Self().CreateSmfRegContext(ueID, pduSessionID)
 	if !udmContext.UDM_Self().UdmSmfRegContextNotExists(ueID) {
 		contextExisted = true
 	}
 
-	// 2. Setup UDR Client
+	// Setup UDR Client
 	clientAPI, err := createUDMClientToUDR(ueID)
 	if err != nil {
-		logger.UecmLog.Errorf("UDR Client Creation Failed: %v", err)
 		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	/*
-	 * ROAMING CHECK & AUTHORIZATION NOTE:
-	 * ----------------------------------
-	 * In this Private 5G implementation (OMEC project), roaming is currently disabled by design.
-	 * Authentication is performed via the subscriber's presence in the Home UDR.
-	 *
-	 * If Roaming Support is implemented in the future, the following procedure should be followed:
-	 * 1. Identify Roaming: Compare Serving PLMN (request.PlmnId) with Home PLMN (factory.UdmConfig).
-	 * 2. Fetch Authorization: Query AccessAndMobilitySubscriptionData (Nudr_DR_Query) for the Visited PLMN.
-	 * 3. Enforce Restrictions: If data is missing (404) or ODB (Operator Determined Barring) is active,
-	 *    return 403 Forbidden with Cause "ROAMING_NOT_ALLOWED".
-	 *
-	 * References:
-	 * - 3GPP TS 23.501 Section 5.3.4.1 (Roaming Restrictions)
-	 * - 3GPP TS 23.502 Section 4.2.2.2 (Registration Procedures)
-	 * - 3GPP TS 29.503 Section 5.3.2.10.2 (SMF Registration Authorization)
-	 */
+	// The UDM must authorize the request based on subscription data presence and access barring.
+	var servingPlmnStr string
+	if request.PlmnId != nil {
+		servingPlmnStr = request.PlmnId.Mcc + request.PlmnId.Mnc
+	}
 
-	// 3. Proceed with Registration in UDR
+	// Fetch Subscription Data to verify authorization
+	amData, resp, errQuery := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
+		QueryAmData(context.Background(), ueID, servingPlmnStr, nil)
+
+	if errQuery != nil {
+		// If the UE does not have required subscription data, return 403 Forbidden.
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			logger.UecmLog.Warnf("Authorization Failed: No subscription data for UE %s", ueID)
+			return nil, nil, &models.ProblemDetails{
+				Status: http.StatusNotFound,
+				Cause:  "USER_NOT_FOUND",
+				Detail: "The UE does not have the required subscription data to authorize this operation",
+			}
+		}
+		logger.UecmLog.Warnf("UDR query error during authorization: %v", errQuery)
+	} else if resp.StatusCode == http.StatusOK {
+		// Check for Access Barring (Operator Determined Barring)
+		if string(amData.OdbPacketServices) != "" {
+			logger.UecmLog.Warnf("Authorization Failed: Access Barring (ODB) active for UE %s", ueID)
+			return nil, nil, &models.ProblemDetails{
+				Status: http.StatusForbidden,
+				Cause:  "ROAMING_NOT_ALLOWED",
+				Detail: "Access is restricted based on ODB",
+			}
+		}
+
+		// TODO: Implement Roaming Restriction Procedure
+		// Currently bypassed as this is a Private 5G implementation.
+		//
+		// Proper 3GPP Procedure for Roaming Authorization:
+		// 1. Compare the Serving PLMN (request.PlmnId) with the UDM's Home PLMN Support List (factory.UdmConfig).
+		// 2. If the PLMNs do not match, the UE is officially roaming.
+		// 3. Evaluate 'RoamingRestrictions' or 'ForbiddenAreas' within the retrieved Subscription Data (amData).
+		// 4. If roaming is restricted for the Serving PLMN, return 403 Forbidden with cause "ROAMING_NOT_ALLOWED".
+		//
+		// References:
+		// - 3GPP TS 23.502 4.3.2.2.1 (PDU Session Establishment procedure)
+		// - 3GPP TS 29.503 5.3.2.2.4 (SMF registration authorization)
+	}
+
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
+
+	// Proceed with SMF Registration in UDR if authorized
 	pduID64, _ := strconv.ParseInt(pduSessionID, 10, 32)
 	pduID32 := int32(pduID64)
-
 	var opts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
 	opts.SmfRegistration = optional.NewInterface(*request)
 
-	resp, err := clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID, pduID32, &opts)
+	resp, err = clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID, pduID32, &opts)
 	if err != nil {
-		// Handle non-standard 200/201 success masked as errors by the library
 		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
-			logger.UecmLog.Debugln("UDR SMF Registration saved successfully")
+			logger.UecmLog.Debugln("UDR SMF Registration success")
 		} else {
-			logger.UecmLog.Errorf("CreateSmfContextNon3gpp failed: %v", err)
 			problemDetails = &models.ProblemDetails{Status: http.StatusInternalServerError}
 			if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
 				if model := apiErr.Model(); model != nil {
@@ -671,7 +699,7 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		resp.Body.Close()
 	}
 
-	// 4. Build Success Response
+	// 5. Build Success Response
 	if contextExisted {
 		return nil, nil, nil
 	}
