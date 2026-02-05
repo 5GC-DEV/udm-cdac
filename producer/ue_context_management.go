@@ -673,7 +673,15 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	}
 
 	// Proceed with SMF Registration in UDR if authorized
-	pduID64, _ := strconv.ParseInt(pduSessionID, 10, 32)
+	pduID64, errParse := strconv.ParseInt(pduSessionID, 10, 32)
+	if errParse != nil {
+		logger.UecmLog.Errorf("Invalid PDU Session ID [%s]: %v", pduSessionID, errParse)
+		return nil, nil, &models.ProblemDetails{
+			Status: http.StatusBadRequest,
+			Cause:  "INVALID_PDU_SESSION_ID",
+			Detail: "The PDU Session ID provided is not a valid integer",
+		}
+	}
 	pduID32 := int32(pduID64)
 	var opts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
 	opts.SmfRegistration = optional.NewInterface(*request)
