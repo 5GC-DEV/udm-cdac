@@ -694,26 +694,27 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 		}
 	}
 
-	pduID32 := int32(pduID64)
+	pduID32 := int32(pduID64) // Convert ID type
 	var createSmfContextNon3gppParamOpts Nudr_DataRepository.CreateSmfContextNon3gppParamOpts
 	createSmfContextNon3gppParamOpts.SmfRegistration = optional.NewInterface(*request)
-
+	// Create SMF context in UDR
 	resp, err = clientAPI.SMFRegistrationDocumentApi.CreateSmfContextNon3gpp(context.Background(), ueID, pduID32, &createSmfContextNon3gppParamOpts)
 	if err != nil {
 		if resp != nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
 			logger.UecmLog.Debugln("UDR SMF Registration success")
 		} else {
-			problemDetails = &models.ProblemDetails{Status: http.StatusInternalServerError}
+			problemDetails = &models.ProblemDetails{Status: http.StatusInternalServerError} // Default error
 			if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-				if model := apiErr.Model(); model != nil {
+				if model := apiErr.Model(); model != nil { // Extract UDR error
 					if pd, ok := model.(models.ProblemDetails); ok {
-						problemDetails = &pd
+						problemDetails = &pd // Use UDR provided cause
 					}
 				}
 			}
 			return nil, nil, problemDetails
 		}
 	}
+	// Close response body safely
 	defer func() {
 		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
 			logger.UecmLog.Errorf("CreateSmfContextNon3gpp response body cannot close: %+v", rspCloseErr)
@@ -721,8 +722,9 @@ func RegistrationSmfRegistrationsProcedure(request *models.SmfRegistration, ueID
 	}()
 
 	if contextExisted {
-		return nil, nil, nil
+		return nil, nil, nil // Return 204 No Content for updates
 	}
+	// Build 201 Created response
 	header = make(http.Header)
 	udmUe, _ := udmContext.UDM_Self().UdmUeFindBySupi(ueID)
 	header.Set("Location", udmUe.GetLocationURI(udmContext.LocationUriSmfRegistration))
