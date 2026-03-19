@@ -543,6 +543,7 @@ func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, s
 	if err != nil {
 		if res == nil {
 			logger.SdmLog.Warnln(err)
+
 		} else if err.Error() != res.Status {
 			logger.SdmLog.Warnln(err)
 		} else {
@@ -556,11 +557,13 @@ func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, s
 			return nil, problemDetails
 		}
 	}
-	defer func() {
-		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QuerySmData response body cannot close: %+v", rspCloseErr)
-		}
-	}()
+	if res != nil && res.Body != nil {
+		defer func() {
+			if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
+				logger.SdmLog.Errorf("QuerySmData response body cannot close: %+v", rspCloseErr)
+			}
+		}()
+	}
 
 	if res.StatusCode == http.StatusOK {
 		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
