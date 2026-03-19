@@ -543,7 +543,6 @@ func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, s
 	if err != nil {
 		if res == nil {
 			logger.SdmLog.Warnln(err)
-
 		} else if err.Error() != res.Status {
 			logger.SdmLog.Warnln(err)
 		} else {
