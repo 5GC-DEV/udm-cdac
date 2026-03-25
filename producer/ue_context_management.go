@@ -53,7 +53,6 @@ func getUdrURI(id string) string {
 		}
 		ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
 		return ue.UdrUri
-
 	} else if strings.Contains(id, "pei") {
 		var udrURI string
 		udmContext.UDM_Self().UdmUePool.Range(func(key, value interface{}) bool {
@@ -71,14 +70,11 @@ func getUdrURI(id string) string {
 			return true // Continue iteration
 		})
 		return udrURI
-
 	} else if strings.Contains(id, "extgroupid") {
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamExtGroupId)
-
 	} else if strings.Contains(id, "msisdn") || strings.Contains(id, "extid") {
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamGpsi)
 	}
-
 	return consumer.SendNFInstancesUDR("", consumer.NFDiscoveryToUDRParamNone)
 }
 
