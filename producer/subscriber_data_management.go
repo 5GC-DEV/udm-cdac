@@ -541,10 +541,9 @@ func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, s
 		SingleNssai: optional.NewInterface(Snssai),
 	}
 
-	// Step 3: Communicate with UDR
+	// Step 3: Communicate with UDR and handle potential protocol errors
 	sessionResp, res, err := clientAPI.SessionManagementSubscriptionDataApi.
 		QuerySmData(context.Background(), supi, plmnID, &querySmDataParamOpts)
-	// Step 4: Handle Communication/Protocol Errors
 	if err != nil {
 		logger.SdmLog.Warnln(err)
 		// If the error matches the response status, it's a protocol-defined error (e.g., 4xx/5xx)
