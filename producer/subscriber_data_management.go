@@ -540,81 +540,99 @@ func HandleGetSmDataRequest(request *httpwrapper.Request) *httpwrapper.Response 
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
+// selectSmDataResponse determines which subset of Session Management data to return
+// based on the presence of Snssai and Dnn query parameters.
+func selectSmDataResponse(ue *udm_context.UdmUeContext, snssai, dnn, snssaiKey string, dnnConfigs []models.DnnConfiguration, allDnns []map[string]models.DnnConfiguration) interface{} {
+	// Acquire a read lock to safely access the UE context data
+	ue.SmSubsDataLock.RLock()
+	defer ue.SmSubsDataLock.RUnlock()
+
+	switch {
+	// Case 1: Neither Snssai nor Dnn provided - return all DNN configurations across all slices
+	case snssai == "" && dnn == "":
+		return allDnns
+
+	// Case 2: Only Snssai provided - return all DNN configurations for that specific slice
+	case snssai != "" && dnn == "":
+		return ue.SessionManagementSubsData[snssaiKey].DnnConfigurations
+
+	// Case 3: Only Dnn provided - return configurations for that DNN across all slices where it exists
+	case snssai == "" && dnn != "":
+		return dnnConfigs
+
+	// Case 4: Both Snssai and Dnn provided - return a flat list of matching subscription data
+	case snssai != "" && dnn != "":
+		rspSMSubDataList := make([]models.SessionManagementSubscriptionData, 0, len(ue.SessionManagementSubsData))
+		for _, eachSMSubData := range ue.SessionManagementSubsData {
+			rspSMSubDataList = append(rspSMSubDataList, eachSMSubData)
+		}
+		return rspSMSubDataList
+
+	// Default: Return the full map of session management subscription data
+	default:
+		return ue.SessionManagementSubsData
+	}
+}
+
+// getSmDataProcedure retrieves Session Management subscription data from UDR and filters it.
 func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, supportedFeatures string) (
 	response interface{}, problemDetails *models.ProblemDetails,
 ) {
 	logger.SdmLog.Infof("getSmDataProcedure: SUPI[%s] PLMNID[%s] DNN[%s] SNssai[%s]", supi, plmnID, Dnn, Snssai)
 
+	// Step 1: Initialize the UDR Client
 	clientAPI, err := createUDMClientToUDR(supi)
 	if err != nil {
 		return nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	var querySmDataParamOpts Nudr.QuerySmDataParamOpts
-	querySmDataParamOpts.SingleNssai = optional.NewInterface(Snssai)
+	// Step 2: Prepare query options
+	querySmDataParamOpts := Nudr.QuerySmDataParamOpts{
+		SingleNssai: optional.NewInterface(Snssai),
+	}
 
-	sessionManagementSubscriptionDataResp, res, err := clientAPI.SessionManagementSubscriptionDataApi.
+	// Step 3: Communicate with UDR
+	sessionResp, res, err := clientAPI.SessionManagementSubscriptionDataApi.
 		QuerySmData(context.Background(), supi, plmnID, &querySmDataParamOpts)
+
+	// Step 4: Handle Communication/Protocol Errors
 	if err != nil {
-		if res == nil {
-			logger.SdmLog.Warnln(err)
-		} else if err.Error() != res.Status {
-			logger.SdmLog.Warnln(err)
-		} else {
-			logger.SdmLog.Warnln(err)
-			problemDetails = &models.ProblemDetails{
+		logger.SdmLog.Warnln(err)
+		// If the error matches the response status, it's a protocol-defined error (e.g., 4xx/5xx)
+		if res != nil && err.Error() == res.Status {
+			return nil, &models.ProblemDetails{
 				Status: int32(res.StatusCode),
 				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
 				Detail: err.Error(),
 			}
-
-			return nil, problemDetails
 		}
 	}
+
+	// Step 5: Validate Response Success
+	if res == nil || res.StatusCode != http.StatusOK {
+		return nil, &models.ProblemDetails{
+			Status: http.StatusNotFound,
+			Cause:  "DATA_NOT_FOUND",
+		}
+	}
+
+	// Ensure the response body is closed after processing
 	defer func() {
 		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
 			logger.SdmLog.Errorf("QuerySmData response body cannot close: %+v", rspCloseErr)
 		}
 	}()
 
-	if res.StatusCode == http.StatusOK {
-		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
-		smData, snssaikey, AllDnnConfigsbyDnn, AllDnns := udm_context.UDM_Self().ManageSmData(
-			sessionManagementSubscriptionDataResp, Snssai, Dnn)
-		udmUe.SetSMSubsData(smData)
+	// Step 6: Update Local UDM Context
+	// NewUdmUe initializes or retrieves the UE context in memory
+	udmUe := udm_context.UDM_Self().NewUdmUe(supi)
 
-		rspSMSubDataList := make([]models.SessionManagementSubscriptionData, 0, 4)
+	// ManageSmData parses the UDR response into internal structures
+	smData, snssaiKey, allDnnByDnn, allDnns := udm_context.UDM_Self().ManageSmData(sessionResp, Snssai, Dnn)
+	udmUe.SetSMSubsData(smData)
 
-		udmUe.SmSubsDataLock.RLock()
-		for _, eachSMSubData := range udmUe.SessionManagementSubsData {
-			rspSMSubDataList = append(rspSMSubDataList, eachSMSubData)
-		}
-		udmUe.SmSubsDataLock.RUnlock()
-
-		switch {
-		case Snssai == "" && Dnn == "":
-			return AllDnns, nil
-		case Snssai != "" && Dnn == "":
-			udmUe.SmSubsDataLock.RLock()
-			defer udmUe.SmSubsDataLock.RUnlock()
-			return udmUe.SessionManagementSubsData[snssaikey].DnnConfigurations, nil
-		case Snssai == "" && Dnn != "":
-			return AllDnnConfigsbyDnn, nil
-		case Snssai != "" && Dnn != "":
-			return rspSMSubDataList, nil
-		default:
-			udmUe.SmSubsDataLock.RLock()
-			defer udmUe.SmSubsDataLock.RUnlock()
-			return udmUe.SessionManagementSubsData, nil
-		}
-	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusNotFound,
-			Cause:  "DATA_NOT_FOUND",
-		}
-
-		return nil, problemDetails
-	}
+	// Step 7: Select and return the appropriate data subset via the helper
+	return selectSmDataResponse(udmUe, Snssai, Dnn, snssaiKey, allDnnByDnn, allDnns), nil
 }
 
 func HandleGetNssaiRequest(request *httpwrapper.Request) *httpwrapper.Response {

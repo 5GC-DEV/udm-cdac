@@ -119,55 +119,84 @@ func (udm *UDM) Initialize(c *cli.Command) error {
 
 // manageGrpcClient connects the config pod GRPC server and subscribes the config changes.
 // Then it updates UDM configuration.
+// checkClientHealth monitors connectivity and handles cleanup if the client is unreachable for too long.
+func checkClientHealth(client grpcClient.ConfClient, count *int) bool {
+	if client.CheckGrpcConnectivity() == "READY" {
+		*count = 0 // Reset counter on successful connection
+		return true
+	}
+
+	// Not READY: Wait and increment retry counter
+	logger.InitLog.Infoln("checking the connectivity readiness")
+	time.Sleep(time.Second * 30)
+	*count++
+
+	if *count > 5 {
+		if err := client.GetConfigClientConn().Close(); err != nil {
+			logger.InitLog.Infof("failing ConfigClient is not closed properly: %+v", err)
+		}
+		*count = 0
+		return false // Signal that client should be reset
+	}
+	return true // Stay in current state, try again next iteration
+}
+
+// ensureConfigSubscription ensures the GRPC stream and config channel are initialized.
+func ensureConfigSubscription(client grpcClient.ConfClient, stream *protos.ConfigService_NetworkSliceSubscribeClient,
+	configChannel *chan *protos.NetworkSliceResponse, udm *UDM) {
+
+	var err error
+	// 1. Ensure Stream
+	if *stream == nil {
+		*stream, err = client.SubscribeToConfigServer()
+		if err != nil {
+			logger.InitLog.Infof("failing SubscribeToConfigServer: %+v", err)
+			return
+		}
+	}
+
+	// 2. Ensure Channel and Start Observer
+	if *configChannel == nil {
+		*configChannel = client.PublishOnConfigChange(true, *stream)
+		logger.InitLog.Infoln("PublishOnConfigChange is triggered")
+		go udm.updateConfig(*configChannel)
+		logger.InitLog.Infoln("UDM updateConfig is triggered")
+	}
+}
+
+// manageGrpcClient connects the config pod GRPC server and subscribes the config changes.
 func manageGrpcClient(webuiUri string, udm *UDM) {
 	var configChannel chan *protos.NetworkSliceResponse
 	var client grpcClient.ConfClient
 	var stream protos.ConfigService_NetworkSliceSubscribeClient
-	var err error
 	count := 0
+
 	for {
-		if client != nil {
-			if client.CheckGrpcConnectivity() != "READY" {
-				time.Sleep(time.Second * 30)
-				count++
-				if count > 5 {
-					err = client.GetConfigClientConn().Close()
-					if err != nil {
-						logger.InitLog.Infof("failing ConfigClient is not closed properly: %+v", err)
-					}
-					client = nil
-					count = 0
-				}
-				logger.InitLog.Infoln("checking the connectivity readiness")
-				continue
-			}
-
-			if stream == nil {
-				stream, err = client.SubscribeToConfigServer()
-				if err != nil {
-					logger.InitLog.Infof("failing SubscribeToConfigServer: %+v", err)
-					continue
-				}
-			}
-
-			if configChannel == nil {
-				configChannel = client.PublishOnConfigChange(true, stream)
-				logger.InitLog.Infoln("PublishOnConfigChange is triggered")
-				go udm.updateConfig(configChannel)
-				logger.InitLog.Infoln("UDM updateConfig is triggered")
-			}
-
-			time.Sleep(time.Second * 5) // Fixes (avoids) 100% CPU utilization
-		} else {
+		// State: Disconnected - Attempt to connect
+		if client == nil {
+			logger.InitLog.Infoln("connecting to config server")
+			var err error
 			client, err = grpcClient.ConnectToConfigServer(webuiUri)
 			stream = nil
 			configChannel = nil
-			logger.InitLog.Infoln("connecting to config server")
 			if err != nil {
-				logger.InitLog.Errorf("%+v", err)
+				logger.InitLog.Errorf("connection failed: %+v", err)
+				time.Sleep(time.Second * 5) // Backoff before retrying
 			}
 			continue
 		}
+
+		// State: Connected - Check Health
+		if !checkClientHealth(client, &count) {
+			client = nil // Trigger reconnection in next loop iteration
+			continue
+		}
+
+		// State: Healthy - Ensure Subscriptions are active
+		ensureConfigSubscription(client, &stream, &configChannel, udm)
+
+		// Heartbeat sleep to prevent 100% CPU usage
+		time.Sleep(time.Second * 5)
 	}
 }
 
@@ -335,56 +364,63 @@ func (udm *UDM) Terminate() {
 	logger.InitLog.Infoln("UDM terminated")
 }
 
+// addPlmnFromSlice extracts PLMN information from a network slice and adds it to the context if it is unique.
+func addPlmnFromSlice(self *context.UDMContext, ns *protos.NetworkSlice) {
+	if ns.Site == nil || ns.Site.Plmn == nil {
+		return
+	}
+
+	site := ns.Site
+	newPlmn := site.Plmn
+
+	// Check for duplicates in the current PlmnList
+	for _, item := range self.PlmnList {
+		if item.PlmnId.Mcc == newPlmn.Mcc && item.PlmnId.Mnc == newPlmn.Mnc {
+			return
+		}
+	}
+
+	// Add unique PLMN to context
+	self.PlmnList = append(self.PlmnList, factory.PlmnSupportItem{
+		PlmnId: models.PlmnId{
+			Mcc: newPlmn.Mcc,
+			Mnc: newPlmn.Mnc,
+		},
+	})
+	logger.GrpcLog.Infof("plmn [%s:%s] added in the context", newPlmn.Mcc, newPlmn.Mnc)
+}
+
+// updateConfigTriggerState manages the minConfig state and notifies the main routine of changes.
+func updateConfigTriggerState(minConfig *bool, plmnCount int) {
+	hasPlmns := plmnCount > 0
+
+	// State Machine: Trigger only if first config is received or if we are already in a configured state
+	if !*minConfig && hasPlmns {
+		*minConfig = true
+		ConfigPodTrigger <- true
+		logger.GrpcLog.Infoln(msgSendConfigTrigger)
+	} else if *minConfig {
+		*minConfig = hasPlmns
+		ConfigPodTrigger <- hasPlmns
+		logger.GrpcLog.Infoln(msgSendConfigTrigger)
+	}
+}
+
 func (udm *UDM) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
 	var minConfig bool
 	self := context.UDM_Self()
+
 	for rsp := range commChannel {
 		logger.GrpcLog.Infoln("received updateConfig in the udm app:", rsp)
+
+		// Process each slice to update the PLMN list
 		for _, ns := range rsp.NetworkSlice {
 			logger.GrpcLog.Infoln("network Slice Name", ns.Name)
-			if ns.Site != nil {
-				temp := factory.PlmnSupportItem{}
-				found := false
-				logger.GrpcLog.Infoln("network Slice has site name present ")
-				site := ns.Site
-				logger.GrpcLog.Infoln("site name", site.SiteName)
-				if site.Plmn != nil {
-					temp.PlmnId.Mcc = site.Plmn.Mcc
-					temp.PlmnId.Mnc = site.Plmn.Mnc
-					logger.GrpcLog.Infoln("plmn mcc", site.Plmn.Mcc)
-					for _, item := range self.PlmnList {
-						if item.PlmnId.Mcc == temp.PlmnId.Mcc && item.PlmnId.Mnc == temp.PlmnId.Mnc {
-							found = true
-							break
-						}
-					}
-					if !found {
-						self.PlmnList = append(self.PlmnList, temp)
-						logger.GrpcLog.Infoln("plmn added in the context", self.PlmnList)
-					}
-				} else {
-					logger.GrpcLog.Infoln("plmn not present in the message")
-				}
-			}
+			addPlmnFromSlice(self, ns)
 		}
-		if !minConfig {
-			// first slice Created
-			if len(self.PlmnList) > 0 {
-				minConfig = true
-				ConfigPodTrigger <- true
-				logger.GrpcLog.Infoln(msgSendConfigTrigger)
-			}
-		} else {
-			// all slices deleted
-			if len(self.PlmnList) == 0 {
-				minConfig = false
-				ConfigPodTrigger <- false
-				logger.GrpcLog.Infoln(msgSendConfigTrigger)
-			} else {
-				ConfigPodTrigger <- true
-				logger.GrpcLog.Infoln(msgSendConfigTrigger)
-			}
-		}
+
+		// Update the trigger status based on the current PlmnList size
+		updateConfigTriggerState(&minConfig, len(self.PlmnList))
 	}
 	return true
 }

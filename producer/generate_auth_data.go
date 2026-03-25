@@ -132,93 +132,87 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
-func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, response *models.AuthEvent, problemDetails *models.ProblemDetails) {
-	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
-	optInterface := optional.NewInterface(authEvent)
-	createAuthParam.AuthEvent = optInterface
-
-	client, err := createUDMClientToUDR(supi)
+// extractAuthEventBody handles the complexity of retrieving the body from either the error object or the response stream.
+func extractAuthEventBody(resp *http.Response, err error) ([]byte, error) {
 	if err != nil {
-		// Use naked return with named return variables.
-		problemDetails = util.ProblemDetailsSystemFailure(err.Error())
-		return
+		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok && len(openApiErr.Body()) > 0 {
+			return openApiErr.Body(), nil
+		}
 	}
-
-	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
-		context.Background(), supi, &createAuthParam)
-
-	// The logic is completely replaced to handle the new 201 response correctly.
-	if resp != nil {
-		defer func() {
-			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-				logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
-			}
-		}()
+	if resp != nil && resp.Body != nil {
+		return io.ReadAll(resp.Body)
 	}
+	return nil, fmt.Errorf("no response body available")
+}
 
-	// First, check for a valid response object and the successful status code.
-	if resp != nil && resp.StatusCode == http.StatusCreated {
-		var createdEvent models.AuthEvent
-		var responseBody []byte
-
-		// This client library puts the 201 response body inside the error object.
-		// Check the error object first.
-		if err != nil {
-			if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-				responseBody = openApiErr.Body()
-			}
-		}
-
-		// Fallback to read the body directly if it wasn't in the error.
-		if responseBody == nil {
-			body, readErr := io.ReadAll(resp.Body)
-			if readErr != nil {
-				problemDetails = util.ProblemDetailsSystemFailure("UDR Response Body Read Failure")
-				return
-			}
-			responseBody = body
-		}
-
-		// Decode the JSON from the UDR response.
-		if decodeErr := json.Unmarshal(responseBody, &createdEvent); decodeErr != nil {
-			problemDetails = util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
-			return
-		}
-
-		// Find or create the UE's context in memory.
-		ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
-		if !ok {
-			logger.UeauLog.Infof("Storing AuthEvent with ID [%s] in context for SUPI [%s]", createdEvent.AuthEventId, supi)
-			ue = udm_context.UDM_Self().NewUdmUe(supi)
-		}
-		// Store the event in the UE's context for the subsequent deletion request.
-		ue.LastAuthenticationEvent = &createdEvent
-
-		// Build the Location header using the new helper function.
-		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
-		header = make(http.Header)
-		header.Set("Location", locationURI) // Set the response body and return successfully.
-		response = &createdEvent
-		return
-	}
-
-	problemDetails = &models.ProblemDetails{
+// buildAuthDataProblemDetails centralizes the error mapping logic.
+func buildAuthDataProblemDetails(resp *http.Response, err error) *models.ProblemDetails {
+	pd := &models.ProblemDetails{
 		Status: http.StatusInternalServerError,
 		Cause:  "UDR_ERROR",
 		Detail: "Received an unexpected status code or error from UDR.",
 	}
 	if resp != nil {
-		problemDetails.Status = int32(resp.StatusCode)
+		pd.Status = int32(resp.StatusCode)
 	}
 	if err != nil {
 		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
 			if prob, ok := openApiErr.Model().(models.ProblemDetails); ok {
-				problemDetails.Cause = prob.Cause
+				pd.Cause = prob.Cause
 			}
 		}
-		problemDetails.Detail = err.Error()
+		pd.Detail = err.Error()
 	}
-	return
+	return pd
+}
+
+func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, response *models.AuthEvent, problemDetails *models.ProblemDetails) {
+	createAuthParam := Nudr_DataRepository.CreateAuthenticationStatusParamOpts{
+		AuthEvent: optional.NewInterface(authEvent),
+	}
+
+	client, err := createUDMClientToUDR(supi)
+	if err != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
+	}
+
+	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(context.Background(), supi, &createAuthParam)
+	if resp != nil {
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", closeErr)
+			}
+		}()
+	}
+
+	// Exit early if the response is not 201 Created
+	if resp == nil || resp.StatusCode != http.StatusCreated {
+		return nil, nil, buildAuthDataProblemDetails(resp, err)
+	}
+
+	// Extract and Decode Body
+	responseBody, readErr := extractAuthEventBody(resp, err)
+	if readErr != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("UDR Response Body Read Failure")
+	}
+
+	var createdEvent models.AuthEvent
+	if decodeErr := json.Unmarshal(responseBody, &createdEvent); decodeErr != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
+	}
+
+	// Update Context
+	ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
+	if !ok {
+		ue = udm_context.UDM_Self().NewUdmUe(supi)
+	}
+	ue.LastAuthenticationEvent = &createdEvent
+
+	// Success Response
+	locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
+	header = make(http.Header)
+	header.Set("Location", locationURI)
+	return header, &createdEvent, nil
 }
 
 func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest, supiOrSuci string) (response *models.AuthenticationInfoResult, problemDetails *models.ProblemDetails) {
