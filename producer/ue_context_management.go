@@ -46,38 +46,39 @@ func createUDMClientToUDR(id string) (*Nudr_DataRepository.APIClient, error) {
 
 func getUdrURI(id string) string {
 	if strings.Contains(id, "imsi") || strings.Contains(id, "nai") { // supi
+		// Consolidation of SUPI logic: Find or create UE, then set URI once
 		ue, ok := udmContext.UDM_Self().UdmUeFindBySupi(id)
-		if ok {
-			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
-			return ue.UdrUri
-		} else {
+		if !ok {
 			ue = udmContext.UDM_Self().NewUdmUe(id)
-			ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
-			return ue.UdrUri
 		}
+		ue.UdrUri = consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamSupi)
+		return ue.UdrUri
+
 	} else if strings.Contains(id, "pei") {
 		var udrURI string
 		udmContext.UDM_Self().UdmUePool.Range(func(key, value interface{}) bool {
 			ue := value.(*udmContext.UdmUeContext)
-			if ue.Amf3GppAccessRegistration != nil && ue.Amf3GppAccessRegistration.Pei == id {
+
+			// Consolidation of PEI logic: Check both 3GPP and Non-3GPP registrations
+			is3GppMatch := ue.Amf3GppAccessRegistration != nil && ue.Amf3GppAccessRegistration.Pei == id
+			isNon3GppMatch := ue.AmfNon3GppAccessRegistration != nil && ue.AmfNon3GppAccessRegistration.Pei == id
+
+			if is3GppMatch || isNon3GppMatch {
 				ue.UdrUri = consumer.SendNFInstancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
 				udrURI = ue.UdrUri
-				return false
-			} else if ue.AmfNon3GppAccessRegistration != nil && ue.AmfNon3GppAccessRegistration.Pei == id {
-				ue.UdrUri = consumer.SendNFInstancesUDR(ue.Supi, consumer.NFDiscoveryToUDRParamSupi)
-				udrURI = ue.UdrUri
-				return false
+				return false // Stop iteration
 			}
-			return true
+			return true // Continue iteration
 		})
 		return udrURI
+
 	} else if strings.Contains(id, "extgroupid") {
-		// extra group id
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamExtGroupId)
+
 	} else if strings.Contains(id, "msisdn") || strings.Contains(id, "extid") {
-		// gpsi
 		return consumer.SendNFInstancesUDR(id, consumer.NFDiscoveryToUDRParamGpsi)
 	}
+
 	return consumer.SendNFInstancesUDR("", consumer.NFDiscoveryToUDRParamNone)
 }
 
