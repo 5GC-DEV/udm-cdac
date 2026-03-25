@@ -544,7 +544,6 @@ func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, s
 	// Step 3: Communicate with UDR
 	sessionResp, res, err := clientAPI.SessionManagementSubscriptionDataApi.
 		QuerySmData(context.Background(), supi, plmnID, &querySmDataParamOpts)
-
 	// Step 4: Handle Communication/Protocol Errors
 	if err != nil {
 		logger.SdmLog.Warnln(err)
