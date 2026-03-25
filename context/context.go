@@ -33,6 +33,8 @@ const (
 	LocationUriAuthEvents // New constant for AuthEvent resource URI type.
 )
 
+const uecmUriPrefix = "/nudm-uecm/v1/"
+
 func init() {
 	UDM_Self().NfService = make(map[models.ServiceName]models.NfService)
 	UDM_Self().EeSubscriptionIDGenerator = idgenerator.NewGenerator(1, math.MaxInt32)
@@ -357,11 +359,11 @@ func (context *UDMContext) GetAmfNon3gppRegContext(supi string) *models.AmfNon3G
 func (ue *UdmUeContext) GetLocationURI(types int) string {
 	switch types {
 	case LocationUriAmf3GppAccessRegistration:
-		return UDM_Self().GetIPv4Uri() + "/nudm-uecm/v1/" + ue.Supi + "/registrations/amf-3gpp-access"
+		return UDM_Self().GetIPv4Uri() + uecmUriPrefix + ue.Supi + "/registrations/amf-3gpp-access"
 	case LocationUriAmfNon3GppAccessRegistration:
-		return UDM_Self().GetIPv4Uri() + "/nudm-uecm/v1/" + ue.Supi + "/registrations/amf-non-3gpp-access"
+		return UDM_Self().GetIPv4Uri() + uecmUriPrefix + ue.Supi + "/registrations/amf-non-3gpp-access"
 	case LocationUriSmfRegistration:
-		return UDM_Self().GetIPv4Uri() + "/nudm-uecm/v1/" + ue.Supi + "/registrations/smf-registrations/" + ue.PduSessionID
+		return UDM_Self().GetIPv4Uri() + uecmUriPrefix + ue.Supi + "/registrations/smf-registrations/" + ue.PduSessionID
 	}
 	return ""
 }

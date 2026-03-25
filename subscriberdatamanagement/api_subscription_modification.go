@@ -43,7 +43,7 @@ func HTTPModify(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&sdmSubsModificationReq, requestBody, "application/json")
+	err = openapi.Deserialize(&sdmSubsModificationReq, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -61,7 +61,7 @@ func HTTPModify(c *gin.Context) {
 	req.Params["subscriptionId"] = c.Params.ByName("subscriptionId")
 
 	rsp := producer.HandleModifyRequest(req)
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.SdmLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -71,7 +71,7 @@ func HTTPModify(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }
 
@@ -93,7 +93,7 @@ func HTTPModifyForSharedData(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&sharedDataSubscriptions, requestBody, "application/json")
+	err = openapi.Deserialize(&sharedDataSubscriptions, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -112,7 +112,7 @@ func HTTPModifyForSharedData(c *gin.Context) {
 
 	rsp := producer.HandleModifyForSharedDataRequest(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.SdmLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -122,6 +122,6 @@ func HTTPModifyForSharedData(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }

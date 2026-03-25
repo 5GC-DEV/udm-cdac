@@ -25,6 +25,8 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const contentTypeJson = "application/json"
+
 // Update - provision parameters
 func HTTPUpdate(c *gin.Context) {
 	var ppDataReq models.PpData
@@ -44,7 +46,7 @@ func HTTPUpdate(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&ppDataReq, requestBody, "application/json")
+	err = openapi.Deserialize(&ppDataReq, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -62,7 +64,7 @@ func HTTPUpdate(c *gin.Context) {
 
 	rsp := producer.HandleUpdateRequest(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.PpLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -72,6 +74,6 @@ func HTTPUpdate(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }

@@ -20,6 +20,8 @@ import (
 	"github.com/omec-project/udm/logger"
 )
 
+const errServerNoResponse = "server no response"
+
 func BuildNFInstance(udmContext *udmContext.UDMContext) (profile models.NfProfile, err error) {
 	profile.NfInstanceId = udmContext.NfId
 	profile.NfStatus = models.NfStatus_REGISTERED
@@ -116,7 +118,7 @@ func SendDeregisterNFInstance() (problemDetails *models.ProblemDetails, err erro
 		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		problemDetails = &problem
 	} else {
-		err = openapi.ReportError("server no response")
+		err = openapi.ReportError(errServerNoResponse)
 	}
 	return
 }
@@ -146,7 +148,7 @@ var SendUpdateNFInstance = func(patchItem []models.PatchItem) (nfProfile models.
 		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		problemDetails = &problem
 	} else {
-		err = openapi.ReportError("server no response")
+		err = openapi.ReportError(errServerNoResponse)
 	}
 	return
 }
@@ -176,7 +178,7 @@ func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscri
 		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		problemDetails = &problem
 	} else {
-		err = openapi.ReportError("server no response")
+		err = openapi.ReportError(errServerNoResponse)
 	}
 	return
 }
@@ -206,7 +208,7 @@ func SendRemoveSubscription(subscriptionId string) (problemDetails *models.Probl
 		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		problemDetails = &problem
 	} else {
-		err = openapi.ReportError("server no response")
+		err = openapi.ReportError(errServerNoResponse)
 	}
 	return
 }

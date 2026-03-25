@@ -16,6 +16,8 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const contentTypeJson = "application/json"
+
 func HTTPDataChangeNotificationToNF(c *gin.Context) {
 	var dataChangeNotify models.DataChangeNotify
 	// step 1: retrieve http request body
@@ -33,7 +35,7 @@ func HTTPDataChangeNotificationToNF(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&dataChangeNotify, requestBody, "application/json")
+	err = openapi.Deserialize(&dataChangeNotify, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -50,7 +52,7 @@ func HTTPDataChangeNotificationToNF(c *gin.Context) {
 	req.Params["supi"] = c.Params.ByName("supi")
 
 	rsp := producer.HandleDataChangeNotificationToNFRequest(req)
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.CallbackLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -60,6 +62,6 @@ func HTTPDataChangeNotificationToNF(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }

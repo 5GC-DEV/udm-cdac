@@ -25,12 +25,14 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const queryPlmnID = "plmn-id"
+
 // GetAmData - retrieve a UE's Access and Mobility Subscription Data
 func HTTPGetAmData(c *gin.Context) {
 	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["supi"] = c.Params.ByName("supi")
-	req.Query.Set("plmn-id", c.Query("plmn-id"))
-	req.Query.Set("supported-features", c.Query("plmn-id"))
+	req.Query.Set(queryPlmnID, c.Query(queryPlmnID))
+	req.Query.Set("supported-features", c.Query(queryPlmnID))
 
 	rsp := producer.HandleGetAmDataRequest(req)
 

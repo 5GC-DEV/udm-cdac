@@ -50,6 +50,11 @@ func init() {
 	ConfigPodTrigger = make(chan bool)
 }
 
+const (
+	msgSendConfigTrigger = "send config trigger to main routine"
+	errUpdateNrf         = "UDM update to NRF Error[%s]"
+)
+
 type (
 	// Config information.
 	Config struct {
@@ -367,17 +372,17 @@ func (udm *UDM) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool
 			if len(self.PlmnList) > 0 {
 				minConfig = true
 				ConfigPodTrigger <- true
-				logger.GrpcLog.Infoln("send config trigger to main routine")
+				logger.GrpcLog.Infoln(msgSendConfigTrigger)
 			}
 		} else {
 			// all slices deleted
 			if len(self.PlmnList) == 0 {
 				minConfig = false
 				ConfigPodTrigger <- false
-				logger.GrpcLog.Infoln("send config trigger to main routine")
+				logger.GrpcLog.Infoln(msgSendConfigTrigger)
 			} else {
 				ConfigPodTrigger <- true
-				logger.GrpcLog.Infoln("send config trigger to main routine")
+				logger.GrpcLog.Infoln(msgSendConfigTrigger)
 			}
 		}
 	}
@@ -443,14 +448,14 @@ func (udm *UDM) UpdateNF() {
 			// register with NRF full profile
 			nfProfile, err = udm.BuildAndSendRegisterNFInstance()
 			if err != nil {
-				logger.InitLog.Errorf("UDM update to NRF Error[%s]", err.Error())
+				logger.InitLog.Errorf(errUpdateNrf, err.Error())
 			}
 		}
 	} else if err != nil {
-		logger.InitLog.Errorf("UDM update to NRF Error[%s]", err.Error())
+		logger.InitLog.Errorf(errUpdateNrf, err.Error())
 		nfProfile, err = udm.BuildAndSendRegisterNFInstance()
 		if err != nil {
-			logger.InitLog.Errorf("UDM update to NRF Error[%s]", err.Error())
+			logger.InitLog.Errorf(errUpdateNrf, err.Error())
 		}
 	}
 

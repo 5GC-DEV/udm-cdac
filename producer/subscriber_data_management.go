@@ -22,25 +22,40 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const (
+	queryPlmnID            = "plmn-id"
+	querySupportedFeatures = "supported-features"
+	metricAmData           = "am-data"
+	metricIdTranslation    = "id-translation-result"
+	metricSharedData       = "shared-data"
+	metricSmData           = "sm-data"
+	metricSmfSelectData    = "smf-select-data"
+	metricSharedDataSubs   = "shared-data-subscriptions"
+	metricSdmSubs          = "sdm-subscriptions"
+	metricTraceData        = "trace-data"
+	metricUeCtxInSmf       = "ue-context-in-smf-data"
+	errQueryAmDataClose    = "QueryAmData response body cannot close: %+v"
+)
+
 func HandleGetAmDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetAmData")
 	supi := request.Params["supi"]
-	plmnID := request.Query.Get("plmn-id")
-	supportedFeatures := request.Query.Get("supported-features")
+	plmnID := request.Query.Get(queryPlmnID)
+	supportedFeatures := request.Query.Get(querySupportedFeatures)
 	response, problemDetails := getAmDataProcedure(supi, plmnID, supportedFeatures)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "am-data", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricAmData, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "am-data", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricAmData, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("get", "am-data", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("get", metricAmData, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -74,7 +89,7 @@ func getAmDataProcedure(supi string, plmnID string, supportedFeatures string) (
 	}
 	defer func() {
 		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QueryAmData response body cannot close: %+v", rspCloseErr)
+			logger.SdmLog.Errorf(errQueryAmDataClose, rspCloseErr)
 		}
 	}()
 
@@ -96,18 +111,18 @@ func HandleGetIdTranslationResultRequest(request *httpwrapper.Request) *httpwrap
 	gpsi := request.Params["gpsi"]
 	response, problemDetails := getIdTranslationResultProcedure(gpsi)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "id-translation-result", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricIdTranslation, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "id-translation-result", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricIdTranslation, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("get", "id-translation-result", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("get", metricIdTranslation, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -173,9 +188,9 @@ func getIdTranslationResultProcedure(gpsi string) (response *models.IdTranslatio
 func HandleGetSupiRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetSupiRequest")
 	supi := request.Params["supi"]
-	plmnID := request.Query.Get("plmn-id")
+	plmnID := request.Query.Get(queryPlmnID)
 	dataSetNames := request.Query["dataset-names"]
-	supportedFeatures := request.Query.Get("supported-features")
+	supportedFeatures := request.Query.Get(querySupportedFeatures)
 	response, problemDetails := getSupiProcedure(supi, plmnID, dataSetNames, supportedFeatures)
 	if response != nil {
 		stats.IncrementUdmSubscriberDataManagementStats("get", "supi", "SUCCESS")
@@ -237,7 +252,7 @@ func getSupiProcedure(supi string, plmnID string, dataSetNames []string, support
 	}
 	defer func() {
 		if rspCloseErr := res1.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QueryAmData response body cannot close: %+v", rspCloseErr)
+			logger.SdmLog.Errorf(errQueryAmDataClose, rspCloseErr)
 		}
 	}()
 	if res1.StatusCode == http.StatusOK {
@@ -435,21 +450,21 @@ func getSupiProcedure(supi string, plmnID string, dataSetNames []string, support
 func HandleGetSharedDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetSharedData")
 	sharedDataIds := request.Query["sharedDataIds"]
-	supportedFeatures := request.Query.Get("supported-features")
+	supportedFeatures := request.Query.Get(querySupportedFeatures)
 	response, problemDetails := getSharedDataProcedure(sharedDataIds, supportedFeatures)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "shared-data", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricSharedData, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "shared-data", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricSharedData, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("get", "shared-data", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("get", metricSharedData, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -504,24 +519,24 @@ func getSharedDataProcedure(sharedDataIds []string, supportedFeatures string) (
 func HandleGetSmDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetSmData")
 	supi := request.Params["supi"]
-	plmnID := request.Query.Get("plmn-id")
+	plmnID := request.Query.Get(queryPlmnID)
 	Dnn := request.Query.Get("dnn")
 	Snssai := request.Query.Get("single-nssai")
-	supportedFeatures := request.Query.Get("supported-features")
+	supportedFeatures := request.Query.Get(querySupportedFeatures)
 	response, problemDetails := getSmDataProcedure(supi, plmnID, Dnn, Snssai, supportedFeatures)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "sm-data", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricSmData, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "sm-data", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricSmData, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("get", "sm-data", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("get", metricSmData, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -605,8 +620,8 @@ func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, s
 func HandleGetNssaiRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetNssai")
 	supi := request.Params["supi"]
-	plmnID := request.Query.Get("plmn-id")
-	supportedFeatures := request.Query.Get("supported-features")
+	plmnID := request.Query.Get(queryPlmnID)
+	supportedFeatures := request.Query.Get(querySupportedFeatures)
 	response, problemDetails := getNssaiProcedure(supi, plmnID, supportedFeatures)
 	if response != nil {
 		stats.IncrementUdmSubscriberDataManagementStats("get", "nssai", "SUCCESS")
@@ -655,7 +670,7 @@ func getNssaiProcedure(supi string, plmnID string, supportedFeatures string) (
 	}
 	defer func() {
 		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QueryAmData response body cannot close: %+v", rspCloseErr)
+			logger.SdmLog.Errorf(errQueryAmDataClose, rspCloseErr)
 		}
 	}()
 
@@ -677,22 +692,22 @@ func getNssaiProcedure(supi string, plmnID string, supportedFeatures string) (
 func HandleGetSmfSelectDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetSmfSelectData")
 	supi := request.Params["supi"]
-	plmnID := request.Query.Get("plmn-id")
-	supportedFeatures := request.Query.Get("supported-features")
+	plmnID := request.Query.Get(queryPlmnID)
+	supportedFeatures := request.Query.Get(querySupportedFeatures)
 	response, problemDetails := getSmfSelectDataProcedure(supi, plmnID, supportedFeatures)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "smf-select-data", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricSmfSelectData, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "smf-select-data", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricSmfSelectData, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("get", "smf-select-data", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("get", metricSmfSelectData, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -752,14 +767,14 @@ func HandleSubscribeToSharedDataRequest(request *httpwrapper.Request) *httpwrapp
 	sdmSubscription := request.Body.(models.SdmSubscription)
 	header, response, problemDetails := subscribeToSharedDataProcedure(&sdmSubscription)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("create", "shared-data-subscriptions", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("create", metricSharedDataSubs, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("create", "shared-data-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("create", metricSharedDataSubs, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
-		stats.IncrementUdmSubscriberDataManagementStats("create", "shared-data-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("create", metricSharedDataSubs, "FAILURE")
 		return httpwrapper.NewResponse(http.StatusNotFound, nil, nil)
 	}
 }
@@ -822,14 +837,14 @@ func HandleSubscribeRequest(request *httpwrapper.Request) *httpwrapper.Response 
 	supi := request.Params["supi"]
 	header, response, problemDetails := subscribeProcedure(&sdmSubscription, supi)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("create", "sdm-subscriptions", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("create", metricSdmSubs, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusCreated, header, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("create", "sdm-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("create", metricSdmSubs, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
-		stats.IncrementUdmSubscriberDataManagementStats("create", "sdm-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("create", metricSdmSubs, "FAILURE")
 		return httpwrapper.NewResponse(http.StatusNotFound, nil, nil)
 	}
 }
@@ -895,10 +910,10 @@ func HandleUnsubscribeForSharedDataRequest(request *httpwrapper.Request) *httpwr
 	subscriptionID := request.Params["subscriptionId"]
 	problemDetails := unsubscribeForSharedDataProcedure(subscriptionID)
 	if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("delete", "shared-data-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("delete", metricSharedDataSubs, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("delete", "shared-data-subscriptions", "SUCCESS")
+	stats.IncrementUdmSubscriberDataManagementStats("delete", metricSharedDataSubs, "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
@@ -946,10 +961,10 @@ func HandleUnsubscribeRequest(request *httpwrapper.Request) *httpwrapper.Respons
 	subscriptionID := request.Params["subscriptionId"]
 	problemDetails := unsubscribeProcedure(supi, subscriptionID)
 	if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("delete", "sdm-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("delete", metricSdmSubs, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("delete", "sdm-subscriptions", "SUCCESS")
+	stats.IncrementUdmSubscriberDataManagementStats("delete", metricSdmSubs, "SUCCESS")
 	return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 }
 
@@ -999,18 +1014,18 @@ func HandleModifyRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	subscriptionID := request.Params["subscriptionId"]
 	response, problemDetails := modifyProcedure(&sdmSubsModification, supi, subscriptionID)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("update", "sdm-subscriptions", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("update", metricSdmSubs, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("update", "sdm-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("update", metricSdmSubs, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("update", "sdm-subscriptions", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("update", metricSdmSubs, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -1067,18 +1082,18 @@ func HandleModifyForSharedDataRequest(request *httpwrapper.Request) *httpwrapper
 	subscriptionID := request.Params["subscriptionId"]
 	response, problemDetails := modifyForSharedDataProcedure(&sdmSubsModification, supi, subscriptionID)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("update", "shared-data-subscriptions", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("update", metricSharedDataSubs, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("update", "shared-data-subscriptions", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("update", metricSharedDataSubs, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("update", "shared-data-subscriptions", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("update", metricSharedDataSubs, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -1133,21 +1148,21 @@ func modifyForSharedDataProcedure(sdmSubsModification *models.SdmSubsModificatio
 func HandleGetTraceDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetTraceData")
 	supi := request.Params["supi"]
-	plmnID := request.Query.Get("plmn-id")
+	plmnID := request.Query.Get(queryPlmnID)
 	response, problemDetails := getTraceDataProcedure(supi, plmnID)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "trace-data", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricTraceData, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "trace-data", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricTraceData, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("get", "trace-data", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("get", metricTraceData, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 
@@ -1206,21 +1221,21 @@ func getTraceDataProcedure(supi string, plmnID string) (
 func HandleGetUeContextInSmfDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.SdmLog.Infoln("handle GetUeContextInSmfData")
 	supi := request.Params["supi"]
-	supportedFeatures := request.Query.Get("supported-features")
+	supportedFeatures := request.Query.Get(querySupportedFeatures)
 	response, problemDetails := getUeContextInSmfDataProcedure(supi, supportedFeatures)
 	if response != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "ue-context-in-smf-data", "SUCCESS")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricUeCtxInSmf, "SUCCESS")
 		// status code is based on SPEC, and option headers
 		return httpwrapper.NewResponse(http.StatusOK, nil, response)
 	} else if problemDetails != nil {
-		stats.IncrementUdmSubscriberDataManagementStats("get", "ue-context-in-smf-data", "FAILURE")
+		stats.IncrementUdmSubscriberDataManagementStats("get", metricUeCtxInSmf, "FAILURE")
 		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	}
 	problemDetails = &models.ProblemDetails{
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
-	stats.IncrementUdmSubscriberDataManagementStats("get", "ue-context-in-smf-data", "FAILURE")
+	stats.IncrementUdmSubscriberDataManagementStats("get", metricUeCtxInSmf, "FAILURE")
 	return httpwrapper.NewResponse(http.StatusForbidden, nil, problemDetails)
 }
 

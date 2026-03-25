@@ -44,7 +44,7 @@ func HttpGenerateAuthData(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&authInfoReq, requestBody, "application/json")
+	err = openapi.Deserialize(&authInfoReq, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -62,7 +62,7 @@ func HttpGenerateAuthData(c *gin.Context) {
 
 	rsp := producer.HandleGenerateAuthDataRequest(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.UeauLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -72,6 +72,6 @@ func HttpGenerateAuthData(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }
