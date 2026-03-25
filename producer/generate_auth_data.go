@@ -39,6 +39,10 @@ const (
 	opcStrLen int   = 32
 )
 
+type milenageResult struct {
+	macA, res, ck, ik, ak []byte
+}
+
 const (
 	authenticationRejected = "AUTHENTICATION_REJECTED"
 	userNotFoundError      = "USER_NOT_FOUND"
@@ -237,7 +241,12 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	// 4. Run Milenage Algorithm
-	mOut := runMilenage(k, opc, randBytes, sqnBytes)
+	// FIX: Handle both return values (result and error)
+	mOut, err := runMilenage(k, opc, randBytes, sqnBytes)
+	if err != nil {
+		logger.UeauLog.Errorln("Milenage error:", err)
+		return nil, util.ProblemDetailsSystemFailure("Milenage algorithm execution failed")
+	}
 
 	// 5. Derive Authentication Vector (5G AKA or EAP-AKA')
 	response, prob := buildAuthResponse(authInfoRequest, authSubs, mOut, supi, randBytes)
@@ -276,30 +285,40 @@ func deriveAuthenticationKeys(authSubs *models.AuthenticationSubscription) ([]by
 		return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected}
 	}
 
-	k, _ := hex.DecodeString(authSubs.PermanentKey.PermanentKeyValue)
-	var op, opc []byte
-
-	// Try to get OPC directly
-	if authSubs.Opc != nil && len(authSubs.Opc.OpcValue) == opcStrLen {
-		opc, _ = hex.DecodeString(authSubs.Opc.OpcValue)
-		return k, opc, nil
+	k, err := hex.DecodeString(authSubs.PermanentKey.PermanentKeyValue)
+	if err != nil {
+		return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected, Detail: "K decode fail"}
 	}
 
-	// Fallback to OP and derive OPC
+	var op, opc []byte
+	if authSubs.Opc != nil && len(authSubs.Opc.OpcValue) == opcStrLen {
+		opc, err = hex.DecodeString(authSubs.Opc.OpcValue)
+		if err == nil {
+			return k, opc, nil
+		}
+	}
+
 	if authSubs.Milenage != nil && authSubs.Milenage.Op != nil && len(authSubs.Milenage.Op.OpValue) == opStrLen {
-		op, _ = hex.DecodeString(authSubs.Milenage.Op.OpValue)
-		opc, _ = milenage.GenerateOPC(k, op)
+		op, err = hex.DecodeString(authSubs.Milenage.Op.OpValue)
+		if err != nil {
+			return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected, Detail: "OP decode fail"}
+		}
+		opc, err = milenage.GenerateOPC(k, op)
+		if err != nil {
+			return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected, Detail: "OPC derive fail"}
+		}
 		return k, opc, nil
 	}
 
 	return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected}
 }
 
-// handleSqnAndResync determines the SQN to use, updates UDR, and generates RAND.
 func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs *models.AuthenticationSubscription, req models.AuthenticationInfoRequest, k, opc []byte) ([]byte, []byte, *models.ProblemDetails) {
 	sqnStr := strictHex(subs.SequenceNumber, 12)
 	randBytes := make([]byte, 16)
-	rand.Read(randBytes)
+	if _, err := rand.Read(randBytes); err != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("Random generator failed")
+	}
 
 	if req.ResynchronizationInfo != nil {
 		var prob *models.ProblemDetails
@@ -309,7 +328,6 @@ func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs
 		}
 	}
 
-	// Update UDR with incremented SQN
 	if prob := updateSqnInUdr(client, supi, sqnStr); prob != nil {
 		return nil, nil, prob
 	}
@@ -349,19 +367,22 @@ func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr s
 	return nil
 }
 
-type milenageResult struct {
-	macA, res, ck, ik, ak []byte
-}
-
-func runMilenage(k, opc, rand, sqn []byte) milenageResult {
+func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
 	amf, _ := hex.DecodeString("8000")
 	res := milenageResult{
 		macA: make([]byte, 8), ck: make([]byte, 16), ik: make([]byte, 16),
 		res: make([]byte, 8), ak: make([]byte, 6),
 	}
-	milenage.F1(opc, k, rand, sqn, amf, res.macA, make([]byte, 8))
-	milenage.F2345(opc, k, rand, res.res, res.ck, res.ik, res.ak, make([]byte, 6))
-	return res
+
+	// We check for errors from milenage functions as required by errcheck
+	if err := milenage.F1(opc, k, rand, sqn, amf, res.macA, make([]byte, 8)); err != nil {
+		return res, err
+	}
+	if err := milenage.F2345(opc, k, rand, res.res, res.ck, res.ik, res.ak, make([]byte, 6)); err != nil {
+		return res, err
+	}
+
+	return res, nil
 }
 
 func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.AuthenticationSubscription, m milenageResult, supi string, randBytes []byte) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
@@ -382,13 +403,22 @@ func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.Authen
 
 	if subs.AuthenticationMethod == models.AuthMethod__5_G_AKA {
 		result.AuthType = models.AuthType__5_G_AKA
-		xresStar, _ := ueauth.GetKDFValue(key, ueauth.FC_FOR_RES_STAR_XRES_STAR_DERIVATION, snName, ueauth.KDFLen(snName), randBytes, ueauth.KDFLen(randBytes), m.res, ueauth.KDFLen(m.res))
-		kausf, _ := ueauth.GetKDFValue(key, ueauth.FC_FOR_KAUSF_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
+		xresStar, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_RES_STAR_XRES_STAR_DERIVATION, snName, ueauth.KDFLen(snName), randBytes, ueauth.KDFLen(randBytes), m.res, ueauth.KDFLen(m.res))
+		if err != nil {
+			return nil, util.ProblemDetailsSystemFailure(err.Error())
+		}
+		kausf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_KAUSF_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
+		if err != nil {
+			return nil, util.ProblemDetailsSystemFailure(err.Error())
+		}
 		av.XresStar = hex.EncodeToString(xresStar[len(xresStar)/2:])
 		av.Kausf = hex.EncodeToString(kausf)
 	} else {
 		result.AuthType = models.AuthType_EAP_AKA_PRIME
-		kdf, _ := ueauth.GetKDFValue(key, ueauth.FC_FOR_CK_PRIME_IK_PRIME_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
+		kdf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_CK_PRIME_IK_PRIME_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
+		if err != nil {
+			return nil, util.ProblemDetailsSystemFailure(err.Error())
+		}
 		av.Xres = hex.EncodeToString(m.res)
 		av.CkPrime = hex.EncodeToString(kdf[:16])
 		av.IkPrime = hex.EncodeToString(kdf[16:])

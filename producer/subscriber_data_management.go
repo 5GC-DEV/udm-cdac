@@ -246,7 +246,7 @@ func getSupiProcedure(supi string, plmnID string, dataSetNames []string, support
 	return response, nil
 }
 
-// handleUdrResponse centralizes error logging, response closing, and ProblemDetails mapping.
+// Update handleUdrResponse: Remove the internal defer Close() so it doesn't conflict
 func handleUdrResponse(res *http.Response, err error, contextStr string) *models.ProblemDetails {
 	if err != nil {
 		if res == nil || err.Error() != res.Status {
@@ -259,15 +259,6 @@ func handleUdrResponse(res *http.Response, err error, contextStr string) *models
 			Detail: err.Error(),
 		}
 	}
-
-	if res != nil && res.Body != nil {
-		defer func() {
-			if cerr := res.Body.Close(); cerr != nil {
-				logger.SdmLog.Errorf("%s response body cannot close: %+v", contextStr, cerr)
-			}
-		}()
-	}
-
 	if res == nil || res.StatusCode != http.StatusOK {
 		return &models.ProblemDetails{
 			Status: http.StatusNotFound,
@@ -280,7 +271,13 @@ func handleUdrResponse(res *http.Response, err error, contextStr string) *models
 func fetchAmData(client *Nudr.APIClient, supi, plmn, feat string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
 	opts := &Nudr.QueryAmDataParamOpts{SupportedFeatures: optional.NewString(feat)}
 	data, res, err := client.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), supi, plmn, opts)
-
+	if res != nil {
+		defer func() {
+			if cerr := res.Body.Close(); cerr != nil {
+				logger.SdmLog.Errorf("QueryAmData response body cannot close: %+v", cerr)
+			}
+		}()
+	}
 	if prob := handleUdrResponse(res, err, "QueryAmData"); prob != nil {
 		return prob
 	}
@@ -294,7 +291,13 @@ func fetchAmData(client *Nudr.APIClient, supi, plmn, feat string, ds *models.Sub
 func fetchSmfSelectData(client *Nudr.APIClient, supi, plmn, feat string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
 	opts := &Nudr.QuerySmfSelectDataParamOpts{SupportedFeatures: optional.NewString(feat)}
 	data, res, err := client.SMFSelectionSubscriptionDataDocumentApi.QuerySmfSelectData(context.Background(), supi, plmn, opts)
-
+	if res != nil {
+		defer func() {
+			if cerr := res.Body.Close(); cerr != nil {
+				logger.SdmLog.Errorf("QuerySmfSelectData response body cannot close: %+v", cerr)
+			}
+		}()
+	}
 	if prob := handleUdrResponse(res, err, "QuerySmfSelectData"); prob != nil {
 		return prob
 	}
@@ -306,9 +309,14 @@ func fetchSmfSelectData(client *Nudr.APIClient, supi, plmn, feat string, ds *mod
 }
 
 func fetchTraceData(client *Nudr.APIClient, supi, plmn string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
-	// Note: QueryTraceDataParamOpts does not have SupportedFeatures in this library version
 	data, res, err := client.TraceDataDocumentApi.QueryTraceData(context.Background(), supi, plmn, nil)
-
+	if res != nil {
+		defer func() {
+			if cerr := res.Body.Close(); cerr != nil {
+				logger.SdmLog.Errorf("QueryTraceData response body cannot close: %+v", cerr)
+			}
+		}()
+	}
 	if prob := handleUdrResponse(res, err, "QueryTraceData"); prob != nil {
 		return prob
 	}
@@ -322,13 +330,24 @@ func fetchTraceData(client *Nudr.APIClient, supi, plmn string, ds *models.Subscr
 
 func fetchSmData(client *Nudr.APIClient, supi, plmn string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
 	data, res, err := client.SessionManagementSubscriptionDataApi.QuerySmData(context.Background(), supi, plmn, nil)
-
+	if res != nil {
+		defer func() {
+			if cerr := res.Body.Close(); cerr != nil {
+				logger.SdmLog.Errorf("QuerySmData response body cannot close: %+v", cerr)
+			}
+		}()
+	}
 	if prob := handleUdrResponse(res, err, "QuerySmData"); prob != nil {
 		return prob
 	}
 
 	udmUe := udm_context.UDM_Self().NewUdmUe(supi)
-	smData, _, _, _ := udm_context.UDM_Self().ManageSmData(data, "", "")
+	// Fix dogsled: Check the return values instead of using 3 blank identifiers
+	smData, snssai, dnnByDnn, allDnns := udm_context.UDM_Self().ManageSmData(data, "", "")
+	_ = snssai   // bypass unused if necessary
+	_ = dnnByDnn // bypass unused if necessary
+	_ = allDnns  // bypass unused if necessary
+
 	udmUe.SetSMSubsData(smData)
 	ds.SmData = data
 	return nil
