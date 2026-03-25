@@ -376,13 +376,17 @@ func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr s
 }
 
 func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
-	amf, _ := hex.DecodeString("8000")
+	// FIX: errcheck for hardcoded hex string
+	amf, err := hex.DecodeString("8000")
+	if err != nil {
+		return milenageResult{}, err
+	}
+
 	res := milenageResult{
 		macA: make([]byte, 8), ck: make([]byte, 16), ik: make([]byte, 16),
 		res: make([]byte, 8), ak: make([]byte, 6),
 	}
 
-	// We check for errors from milenage functions as required by errcheck
 	if err := milenage.F1(opc, k, rand, sqn, amf, res.macA, make([]byte, 8)); err != nil {
 		return res, err
 	}
@@ -394,8 +398,16 @@ func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
 }
 
 func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.AuthenticationSubscription, m milenageResult, supi string, randBytes []byte) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
-	amf, _ := hex.DecodeString("8000")
-	sqnBytes, _ := hex.DecodeString(strictHex(subs.SequenceNumber, 12))
+	// FIX: errcheck for AMF and SQN decoding
+	amf, err := hex.DecodeString("8000")
+	if err != nil {
+		return nil, util.ProblemDetailsSystemFailure("Internal error: AMF decode failed")
+	}
+
+	sqnBytes, err := hex.DecodeString(strictHex(subs.SequenceNumber, 12))
+	if err != nil {
+		return nil, util.ProblemDetailsSystemFailure("Internal error: SQN decode failed")
+	}
 
 	sqnXorAk := make([]byte, 6)
 	for i := 0; i < 6; i++ {
