@@ -241,7 +241,6 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	// 4. Run Milenage Algorithm
-	// FIX: Handle both return values (result and error)
 	mOut, err := runMilenage(k, opc, randBytes, sqnBytes)
 	if err != nil {
 		logger.UeauLog.Errorln("Milenage error:", err)
@@ -332,13 +331,23 @@ func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs
 		return nil, nil, prob
 	}
 
-	sqnBytes, _ := hex.DecodeString(sqnStr)
+	sqnBytes, err := hex.DecodeString(sqnStr)
+	if err != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("SQN string is not valid hex")
+	}
 	return sqnBytes, randBytes, nil
 }
 
 func performResync(supi string, resync *models.ResynchronizationInfo, k, opc, newRand []byte) (string, *models.ProblemDetails) {
-	auts, _ := hex.DecodeString(resync.Auts)
-	oldRand, _ := hex.DecodeString(resync.Rand)
+	auts, err1 := hex.DecodeString(resync.Auts)
+	oldRand, err2 := hex.DecodeString(resync.Rand)
+	if err1 != nil || err2 != nil {
+		return "", &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: "Resync parameters are not valid hex",
+		}
+	}
 
 	sqnMs, macS := aucSQN(opc, k, auts, oldRand)
 	if !reflect.DeepEqual(macS, auts[6:]) {
@@ -346,7 +355,6 @@ func performResync(supi string, resync *models.ResynchronizationInfo, k, opc, ne
 		return "", &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
 	}
 
-	// Calculate Next SQN
 	bigSQN := big.NewInt(0).SetBytes(sqnMs)
 	bigInc := big.NewInt(ind + 1)
 	bigSQN.Add(bigSQN, bigInc).Mod(bigSQN, big.NewInt(SqnMAx))

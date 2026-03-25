@@ -357,6 +357,15 @@ func fetchUeContextInSmfData(client *Nudr.APIClient, supi, feat string, ds *mode
 	opts := &Nudr.QuerySmfRegListParamOpts{SupportedFeatures: optional.NewString(feat)}
 	pdusess, res, err := client.SMFRegistrationsCollectionApi.QuerySmfRegList(context.Background(), supi, opts)
 
+	// FIX: bodyclose violation
+	if res != nil {
+		defer func() {
+			if cerr := res.Body.Close(); cerr != nil {
+				logger.SdmLog.Errorf("QuerySmfRegList response body cannot close: %+v", cerr)
+			}
+		}()
+	}
+
 	if prob := handleUdrResponse(res, err, "QuerySmfRegList"); prob != nil {
 		return prob
 	}
