@@ -216,235 +216,157 @@ func getSupiProcedure(supi string, plmnID string, dataSetNames []string, support
 		return nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
 
-	var subscriptionDataSets, subsDataSetBody models.SubscriptionDataSets
-	var ueContextInSmfDataResp models.UeContextInSmfData
-	pduSessionMap := make(map[string]models.PduSession)
-	var pgwInfoArray []models.PgwInfo
+	response = &models.SubscriptionDataSets{}
 
-	var queryAmDataParamOpts Nudr.QueryAmDataParamOpts
-	queryAmDataParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
-	var querySmfSelectDataParamOpts Nudr.QuerySmfSelectDataParamOpts
-	var queryTraceDataParamOpts Nudr.QueryTraceDataParamOpts
-	var querySmDataParamOpts Nudr.QuerySmDataParamOpts
-
-	queryAmDataParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
-	querySmfSelectDataParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
-	udm_context.UDM_Self().CreateSubsDataSetsForUe(supi, subsDataSetBody)
-
-	var body models.AccessAndMobilitySubscriptionData
-	udm_context.UDM_Self().CreateAccessMobilitySubsDataForUe(supi, body)
-	amData, res1, err1 := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(
-		context.Background(), supi, plmnID, &queryAmDataParamOpts)
-	if err1 != nil {
-		if res1 == nil {
-			logger.SdmLog.Errorln(err1.Error())
-		} else if err1.Error() != res1.Status {
-			logger.SdmLog.Errorln(err1.Error())
-		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: int32(res1.StatusCode),
-				Cause:  err1.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-				Detail: err1.Error(),
-			}
-
-			return nil, problemDetails
-		}
-	}
-	defer func() {
-		if rspCloseErr := res1.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf(errQueryAmDataClose, rspCloseErr)
-		}
-	}()
-	if res1.StatusCode == http.StatusOK {
-		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
-		udmUe.SetAMSubsriptionData(&amData)
-		subscriptionDataSets.AmData = &amData
-	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusNotFound,
-			Cause:  "DATA_NOT_FOUND",
-		}
-
-		return nil, problemDetails
+	// 1. Access and Mobility Data
+	if prob := fetchAmData(clientAPI, supi, plmnID, supportedFeatures, response); prob != nil {
+		return nil, prob
 	}
 
-	var smfSelSubsbody models.SmfSelectionSubscriptionData
-	udm_context.UDM_Self().CreateSmfSelectionSubsDataforUe(supi, smfSelSubsbody)
-	smfSelData, res2, err2 := clientAPI.SMFSelectionSubscriptionDataDocumentApi.QuerySmfSelectData(context.Background(),
-		supi, plmnID, &querySmfSelectDataParamOpts)
-	if err2 != nil {
-		if res2 == nil {
-			logger.SdmLog.Errorln(err2.Error())
-		} else if err2.Error() != res2.Status {
-			logger.SdmLog.Errorln(err2.Error())
-		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: int32(res2.StatusCode),
-				Cause:  err2.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-				Detail: err2.Error(),
-			}
-
-			return nil, problemDetails
-		}
-	}
-	defer func() {
-		if rspCloseErr := res2.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QuerySmfSelectData response body cannot close: %+v", rspCloseErr)
-		}
-	}()
-	if res2.StatusCode == http.StatusOK {
-		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
-		udmUe.SetSmfSelectionSubsData(&smfSelData)
-		subscriptionDataSets.SmfSelData = &smfSelData
-	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusNotFound,
-			Cause:  "DATA_NOT_FOUND",
-		}
-
-		return nil, problemDetails
+	// 2. SMF Selection Data
+	if prob := fetchSmfSelectData(clientAPI, supi, plmnID, supportedFeatures, response); prob != nil {
+		return nil, prob
 	}
 
-	var TraceDatabody models.TraceData
-	udm_context.UDM_Self().CreateTraceDataforUe(supi, TraceDatabody)
-	traceData, res3, err3 := clientAPI.TraceDataDocumentApi.QueryTraceData(
-		context.Background(), supi, plmnID, &queryTraceDataParamOpts)
-	if err3 != nil {
-		if res3 == nil {
-			logger.SdmLog.Errorln(err3.Error())
-		} else if err3.Error() != res3.Status {
-			logger.SdmLog.Errorln(err3.Error())
-		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: int32(res3.StatusCode),
-				Cause:  err3.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-				Detail: err3.Error(),
-			}
-		}
-		return nil, problemDetails
-	}
-	defer func() {
-		if rspCloseErr := res3.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QueryTraceData response body cannot close: %+v", rspCloseErr)
-		}
-	}()
-	if res3.StatusCode == http.StatusOK {
-		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
-		udmUe.TraceData = &traceData
-		udmUe.TraceDataResponse.TraceData = &traceData
-		subscriptionDataSets.TraceData = &traceData
-	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusNotFound,
-			Cause:  "DATA_NOT_FOUND",
-		}
-
-		return nil, problemDetails
+	// 3. Trace Data
+	if prob := fetchTraceData(clientAPI, supi, plmnID, response); prob != nil {
+		return nil, prob
 	}
 
-	sessionManagementSubscriptionData, res4, err4 := clientAPI.SessionManagementSubscriptionDataApi.
-		QuerySmData(context.Background(), supi, plmnID, &querySmDataParamOpts)
-	if err4 != nil {
-		if res4 == nil {
-			logger.SdmLog.Errorln(err4.Error())
-		} else if err4.Error() != res4.Status {
-			logger.SdmLog.Errorln(err4.Error())
-		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: int32(res4.StatusCode),
-				Cause:  err4.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-				Detail: err4.Error(),
-			}
-
-			return nil, problemDetails
-		}
-	}
-	defer func() {
-		if rspCloseErr := res4.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QuerySmData response body cannot close: %+v", rspCloseErr)
-		}
-	}()
-	if res4.StatusCode == http.StatusOK {
-		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
-		smData, _, _, _ := udm_context.UDM_Self().ManageSmData(sessionManagementSubscriptionData, "", "")
-		udmUe.SetSMSubsData(smData)
-		subscriptionDataSets.SmData = sessionManagementSubscriptionData
-	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusNotFound,
-			Cause:  "DATA_NOT_FOUND",
-		}
-
-		return nil, problemDetails
+	// 4. Session Management Data
+	if prob := fetchSmData(clientAPI, supi, plmnID, response); prob != nil {
+		return nil, prob
 	}
 
-	var UeContextInSmfbody models.UeContextInSmfData
-	var querySmfRegListParamOpts Nudr.QuerySmfRegListParamOpts
-	querySmfRegListParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
-	udm_context.UDM_Self().CreateUeContextInSmfDataforUe(supi, UeContextInSmfbody)
-	pdusess, res, err := clientAPI.SMFRegistrationsCollectionApi.QuerySmfRegList(
-		context.Background(), supi, &querySmfRegListParamOpts)
+	// 5. UE Context in SMF Data
+	if prob := fetchUeContextInSmfData(clientAPI, supi, supportedFeatures, response); prob != nil {
+		return nil, prob
+	}
+
+	return response, nil
+}
+
+// handleUdrResponse centralizes error logging, response closing, and ProblemDetails mapping.
+func handleUdrResponse(res *http.Response, err error, contextStr string) *models.ProblemDetails {
 	if err != nil {
-		if res == nil {
+		if res == nil || err.Error() != res.Status {
 			logger.SdmLog.Errorln(err.Error())
-		} else if err.Error() != res.Status {
-			logger.SdmLog.Errorln(err.Error())
-		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: int32(res.StatusCode),
-				Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-				Detail: err.Error(),
+			return util.ProblemDetailsSystemFailure(err.Error())
+		}
+		return &models.ProblemDetails{
+			Status: int32(res.StatusCode),
+			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+			Detail: err.Error(),
+		}
+	}
+
+	if res != nil && res.Body != nil {
+		defer func() {
+			if cerr := res.Body.Close(); cerr != nil {
+				logger.SdmLog.Errorf("%s response body cannot close: %+v", contextStr, cerr)
 			}
-
-			return nil, problemDetails
-		}
-	}
-	defer func() {
-		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QuerySmfRegList response body cannot close: %+v", rspCloseErr)
-		}
-	}()
-
-	for _, element := range pdusess {
-		var pduSession models.PduSession
-		pduSession.Dnn = element.Dnn
-		pduSession.SmfInstanceId = element.SmfInstanceId
-		pduSession.PlmnId = element.PlmnId
-		pduSessionMap[strconv.Itoa(int(element.PduSessionId))] = pduSession
-	}
-	ueContextInSmfDataResp.PduSessions = pduSessionMap
-
-	for _, element := range pdusess {
-		var pgwInfo models.PgwInfo
-		pgwInfo.Dnn = element.Dnn
-		pgwInfo.PgwFqdn = element.PgwFqdn
-		pgwInfo.PlmnId = element.PlmnId
-		pgwInfoArray = append(pgwInfoArray, pgwInfo)
-	}
-	ueContextInSmfDataResp.PgwInfo = pgwInfoArray
-
-	if res.StatusCode == http.StatusOK {
-		udmUe := udm_context.UDM_Self().NewUdmUe(supi)
-		udmUe.UeCtxtInSmfData = &ueContextInSmfDataResp
-	} else {
-		var problemDetails models.ProblemDetails
-		problemDetails.Cause = "DATA_NOT_FOUND"
-		logger.SdmLog.Errorln(problemDetails.Cause)
+		}()
 	}
 
-	if (res.StatusCode == http.StatusOK) && (res1.StatusCode == http.StatusOK) &&
-		(res2.StatusCode == http.StatusOK) && (res3.StatusCode == http.StatusOK) &&
-		(res4.StatusCode == http.StatusOK) {
-		subscriptionDataSets.UecSmfData = &ueContextInSmfDataResp
-		return &subscriptionDataSets, nil
-	} else {
-		problemDetails = &models.ProblemDetails{
+	if res == nil || res.StatusCode != http.StatusOK {
+		return &models.ProblemDetails{
 			Status: http.StatusNotFound,
 			Cause:  "DATA_NOT_FOUND",
 		}
-
-		return nil, problemDetails
 	}
+	return nil
+}
+
+func fetchAmData(client *Nudr.APIClient, supi, plmn, feat string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
+	opts := &Nudr.QueryAmDataParamOpts{SupportedFeatures: optional.NewString(feat)}
+	data, res, err := client.AccessAndMobilitySubscriptionDataDocumentApi.QueryAmData(context.Background(), supi, plmn, opts)
+
+	if prob := handleUdrResponse(res, err, "QueryAmData"); prob != nil {
+		return prob
+	}
+
+	udmUe := udm_context.UDM_Self().NewUdmUe(supi)
+	udmUe.SetAMSubsriptionData(&data)
+	ds.AmData = &data
+	return nil
+}
+
+func fetchSmfSelectData(client *Nudr.APIClient, supi, plmn, feat string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
+	opts := &Nudr.QuerySmfSelectDataParamOpts{SupportedFeatures: optional.NewString(feat)}
+	data, res, err := client.SMFSelectionSubscriptionDataDocumentApi.QuerySmfSelectData(context.Background(), supi, plmn, opts)
+
+	if prob := handleUdrResponse(res, err, "QuerySmfSelectData"); prob != nil {
+		return prob
+	}
+
+	udmUe := udm_context.UDM_Self().NewUdmUe(supi)
+	udmUe.SetSmfSelectionSubsData(&data)
+	ds.SmfSelData = &data
+	return nil
+}
+
+func fetchTraceData(client *Nudr.APIClient, supi, plmn string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
+	// Note: QueryTraceDataParamOpts does not have SupportedFeatures in this library version
+	data, res, err := client.TraceDataDocumentApi.QueryTraceData(context.Background(), supi, plmn, nil)
+
+	if prob := handleUdrResponse(res, err, "QueryTraceData"); prob != nil {
+		return prob
+	}
+
+	udmUe := udm_context.UDM_Self().NewUdmUe(supi)
+	udmUe.TraceData = &data
+	udmUe.TraceDataResponse.TraceData = &data
+	ds.TraceData = &data
+	return nil
+}
+
+func fetchSmData(client *Nudr.APIClient, supi, plmn string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
+	data, res, err := client.SessionManagementSubscriptionDataApi.QuerySmData(context.Background(), supi, plmn, nil)
+
+	if prob := handleUdrResponse(res, err, "QuerySmData"); prob != nil {
+		return prob
+	}
+
+	udmUe := udm_context.UDM_Self().NewUdmUe(supi)
+	smData, _, _, _ := udm_context.UDM_Self().ManageSmData(data, "", "")
+	udmUe.SetSMSubsData(smData)
+	ds.SmData = data
+	return nil
+}
+
+func fetchUeContextInSmfData(client *Nudr.APIClient, supi, feat string, ds *models.SubscriptionDataSets) *models.ProblemDetails {
+	opts := &Nudr.QuerySmfRegListParamOpts{SupportedFeatures: optional.NewString(feat)}
+	pdusess, res, err := client.SMFRegistrationsCollectionApi.QuerySmfRegList(context.Background(), supi, opts)
+
+	if prob := handleUdrResponse(res, err, "QuerySmfRegList"); prob != nil {
+		return prob
+	}
+
+	ueCtx := &models.UeContextInSmfData{
+		PduSessions: make(map[string]models.PduSession),
+		PgwInfo:     []models.PgwInfo{},
+	}
+
+	for _, element := range pdusess {
+		pduSession := models.PduSession{
+			Dnn:           element.Dnn,
+			SmfInstanceId: element.SmfInstanceId,
+			PlmnId:        element.PlmnId,
+		}
+		ueCtx.PduSessions[strconv.Itoa(int(element.PduSessionId))] = pduSession
+
+		pgwInfo := models.PgwInfo{
+			Dnn:     element.Dnn,
+			PgwFqdn: element.PgwFqdn,
+			PlmnId:  element.PlmnId,
+		}
+		ueCtx.PgwInfo = append(ueCtx.PgwInfo, pgwInfo)
+	}
+
+	udmUe := udm_context.UDM_Self().NewUdmUe(supi)
+	udmUe.UeCtxtInSmfData = ueCtx
+	ds.UecSmfData = ueCtx
+	return nil
 }
 
 func HandleGetSharedDataRequest(request *httpwrapper.Request) *httpwrapper.Response {
@@ -594,7 +516,6 @@ func getSmDataProcedure(supi string, plmnID string, Dnn string, Snssai string, s
 	// Step 3: Communicate with UDR
 	sessionResp, res, err := clientAPI.SessionManagementSubscriptionDataApi.
 		QuerySmData(context.Background(), supi, plmnID, &querySmDataParamOpts)
-
 	// Step 4: Handle Communication/Protocol Errors
 	if err != nil {
 		logger.SdmLog.Warnln(err)
