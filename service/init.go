@@ -142,8 +142,12 @@ func checkClientHealth(client grpcClient.ConfClient, count *int) bool {
 }
 
 // ensureConfigSubscription ensures the GRPC stream and config channel are initialized.
-func ensureConfigSubscription(client grpcClient.ConfClient, stream *protos.ConfigService_NetworkSliceSubscribeClient,
-	configChannel *chan *protos.NetworkSliceResponse, udm *UDM) {
+func ensureConfigSubscription(
+	client grpcClient.ConfClient,
+	stream *protos.ConfigService_NetworkSliceSubscribeClient,
+	configChannel *chan *protos.NetworkSliceResponse,
+	udm *UDM,
+) {
 	var err error
 	// 1. Ensure Stream
 	if *stream == nil {
