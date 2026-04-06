@@ -42,7 +42,7 @@ func HTTPUpdateEeSubscription(c *gin.Context) {
 		return
 	}
 
-	err = openapi.Deserialize(&patchList, requestBody, "application/json")
+	err = openapi.Deserialize(&patchList, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -64,7 +64,7 @@ func HTTPUpdateEeSubscription(c *gin.Context) {
 	if rsp.Status == http.StatusNoContent {
 		c.Status(rsp.Status)
 	} else {
-		responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+		responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 		if err != nil {
 			logger.EeLog.Errorln(err)
 			problemDetails := models.ProblemDetails{
@@ -74,7 +74,7 @@ func HTTPUpdateEeSubscription(c *gin.Context) {
 			}
 			c.JSON(http.StatusInternalServerError, problemDetails)
 		} else {
-			c.Data(rsp.Status, "application/json", responseBody)
+			c.Data(rsp.Status, contentTypeJson, responseBody)
 		}
 	}
 }

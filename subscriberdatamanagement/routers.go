@@ -23,6 +23,8 @@ import (
 	utilLogger "github.com/omec-project/util/logger"
 )
 
+const errPageNotFound = "404 page not found"
+
 // Route is the information for every URI.
 type Route struct {
 	// Name is the name of this Route.
@@ -60,7 +62,7 @@ func oneLayerPathHandlerFunc(c *gin.Context) {
 		return
 	}
 
-	c.String(http.StatusNotFound, "404 page not found")
+	c.String(http.StatusNotFound, errPageNotFound)
 }
 
 func twoLayerPathHandlerFunc(c *gin.Context) {
@@ -93,7 +95,7 @@ func twoLayerPathHandlerFunc(c *gin.Context) {
 		}
 	}
 
-	c.String(http.StatusNotFound, "404 page not found")
+	c.String(http.StatusNotFound, errPageNotFound)
 }
 
 func threeLayerPathHandlerFunc(c *gin.Context) {
@@ -125,7 +127,7 @@ func threeLayerPathHandlerFunc(c *gin.Context) {
 		return
 	}
 
-	c.String(http.StatusNotFound, "404 page not found")
+	c.String(http.StatusNotFound, errPageNotFound)
 }
 
 func AddService(engine *gin.Engine) *gin.RouterGroup {

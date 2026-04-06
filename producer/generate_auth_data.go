@@ -39,6 +39,10 @@ const (
 	opcStrLen int   = 32
 )
 
+type milenageResult struct {
+	macA, res, ck, ik, ak []byte
+}
+
 const (
 	authenticationRejected = "AUTHENTICATION_REJECTED"
 	userNotFoundError      = "USER_NOT_FOUND"
@@ -132,498 +136,329 @@ func HandleConfirmAuthDataRequest(request *httpwrapper.Request) *httpwrapper.Res
 	return httpwrapper.NewResponse(http.StatusInternalServerError, nil, problemDetails)
 }
 
-func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, response *models.AuthEvent, problemDetails *models.ProblemDetails) {
-	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
-	optInterface := optional.NewInterface(authEvent)
-	createAuthParam.AuthEvent = optInterface
-
-	client, err := createUDMClientToUDR(supi)
+// extractAuthEventBody handles the complexity of retrieving the body from either the error object or the response stream.
+func extractAuthEventBody(resp *http.Response, err error) ([]byte, error) {
 	if err != nil {
-		// Use naked return with named return variables.
-		problemDetails = util.ProblemDetailsSystemFailure(err.Error())
-		return
+		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok && len(openApiErr.Body()) > 0 {
+			return openApiErr.Body(), nil
+		}
 	}
-
-	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
-		context.Background(), supi, &createAuthParam)
-
-	// The logic is completely replaced to handle the new 201 response correctly.
-	if resp != nil {
-		defer func() {
-			if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-				logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
-			}
-		}()
+	if resp != nil && resp.Body != nil {
+		return io.ReadAll(resp.Body)
 	}
+	return nil, fmt.Errorf("no response body available")
+}
 
-	// First, check for a valid response object and the successful status code.
-	if resp != nil && resp.StatusCode == http.StatusCreated {
-		var createdEvent models.AuthEvent
-		var responseBody []byte
-
-		// This client library puts the 201 response body inside the error object.
-		// Check the error object first.
-		if err != nil {
-			if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-				responseBody = openApiErr.Body()
-			}
-		}
-
-		// Fallback to read the body directly if it wasn't in the error.
-		if responseBody == nil {
-			body, readErr := io.ReadAll(resp.Body)
-			if readErr != nil {
-				problemDetails = util.ProblemDetailsSystemFailure("UDR Response Body Read Failure")
-				return
-			}
-			responseBody = body
-		}
-
-		// Decode the JSON from the UDR response.
-		if decodeErr := json.Unmarshal(responseBody, &createdEvent); decodeErr != nil {
-			problemDetails = util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
-			return
-		}
-
-		// Find or create the UE's context in memory.
-		ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
-		if !ok {
-			logger.UeauLog.Infof("Storing AuthEvent with ID [%s] in context for SUPI [%s]", createdEvent.AuthEventId, supi)
-			ue = udm_context.UDM_Self().NewUdmUe(supi)
-		}
-		// Store the event in the UE's context for the subsequent deletion request.
-		ue.LastAuthenticationEvent = &createdEvent
-
-		// Build the Location header using the new helper function.
-		locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
-		header = make(http.Header)
-		header.Set("Location", locationURI) // Set the response body and return successfully.
-		response = &createdEvent
-		return
-	}
-
-	problemDetails = &models.ProblemDetails{
+// buildAuthDataProblemDetails centralizes the error mapping logic.
+func buildAuthDataProblemDetails(resp *http.Response, err error) *models.ProblemDetails {
+	pd := &models.ProblemDetails{
 		Status: http.StatusInternalServerError,
 		Cause:  "UDR_ERROR",
 		Detail: "Received an unexpected status code or error from UDR.",
 	}
 	if resp != nil {
-		problemDetails.Status = int32(resp.StatusCode)
+		pd.Status = int32(resp.StatusCode)
 	}
 	if err != nil {
 		if openApiErr, ok := err.(openapi.GenericOpenAPIError); ok {
 			if prob, ok := openApiErr.Model().(models.ProblemDetails); ok {
-				problemDetails.Cause = prob.Cause
+				pd.Cause = prob.Cause
 			}
 		}
-		problemDetails.Detail = err.Error()
+		pd.Detail = err.Error()
 	}
-	return
+	return pd
 }
 
-func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest, supiOrSuci string) (response *models.AuthenticationInfoResult, problemDetails *models.ProblemDetails) {
-	logger.UeauLog.Debugln("in GenerateAuthDataProcedure")
-	response = &models.AuthenticationInfoResult{}
-	supi, err := suci.ToSupi(supiOrSuci, udm_context.UDM_Self().SuciProfiles)
-	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: err.Error(),
-		}
-
-		logger.UeauLog.Errorln("suciToSupi error:", err.Error())
-		return nil, problemDetails
+func ConfirmAuthDataProcedure(authEvent models.AuthEvent, supi string) (header http.Header, response *models.AuthEvent, problemDetails *models.ProblemDetails) {
+	createAuthParam := Nudr_DataRepository.CreateAuthenticationStatusParamOpts{
+		AuthEvent: optional.NewInterface(authEvent),
 	}
-	logger.UeauLog.Debugf("supi conversion => %s", supi)
+
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
-		return nil, util.ProblemDetailsSystemFailure(err.Error())
+		return nil, nil, util.ProblemDetailsSystemFailure(err.Error())
 	}
+
+	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(context.Background(), supi, &createAuthParam)
+	if resp != nil {
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				logger.UeauLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", closeErr)
+			}
+		}()
+	}
+
+	// Exit early if the response is not 201 Created
+	if resp == nil || resp.StatusCode != http.StatusCreated {
+		return nil, nil, buildAuthDataProblemDetails(resp, err)
+	}
+
+	// Extract and Decode Body
+	responseBody, readErr := extractAuthEventBody(resp, err)
+	if readErr != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("UDR Response Body Read Failure")
+	}
+
+	var createdEvent models.AuthEvent
+	if decodeErr := json.Unmarshal(responseBody, &createdEvent); decodeErr != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("UDR Response Decode Failure")
+	}
+
+	// Update Context
+	ue, ok := udm_context.UDM_Self().UdmUeFindBySupi(supi)
+	if !ok {
+		ue = udm_context.UDM_Self().NewUdmUe(supi)
+	}
+	ue.LastAuthenticationEvent = &createdEvent
+
+	// Success Response
+	locationURI := udm_context.UDM_Self().GetLocationURI3(udm_context.LocationUriAuthEvents, supi, createdEvent.AuthEventId)
+	header = make(http.Header)
+	header.Set("Location", locationURI)
+	return header, &createdEvent, nil
+}
+
+func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest, supiOrSuci string) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
+	logger.UeauLog.Debugln("in GenerateAuthDataProcedure")
+
+	// 1. Resolve Identity and Fetch Subscription Data
+	supi, authSubs, client, prob := fetchAuthSubscription(supiOrSuci)
+	if prob != nil {
+		return nil, prob
+	}
+
+	// 2. Extract and Derive Credentials (K, OP, OPC)
+	k, opc, prob := deriveAuthenticationKeys(authSubs)
+	if prob != nil {
+		return nil, prob
+	}
+
+	// 3. Manage SQN and RAND (Handle Resync and Increment)
+	sqnBytes, randBytes, prob := handleSqnAndResync(client, supi, authSubs, authInfoRequest, k, opc)
+	if prob != nil {
+		return nil, prob
+	}
+
+	// 4. Run Milenage Algorithm
+	mOut, err := runMilenage(k, opc, randBytes, sqnBytes)
+	if err != nil {
+		logger.UeauLog.Errorln("Milenage error:", err)
+		return nil, util.ProblemDetailsSystemFailure("Milenage algorithm execution failed")
+	}
+
+	// 5. Derive Authentication Vector (5G AKA or EAP-AKA')
+	response, prob := buildAuthResponse(authInfoRequest, authSubs, mOut, supi, randBytes)
+	if prob != nil {
+		return nil, prob
+	}
+
+	return response, nil
+}
+
+// fetchAuthSubscription handles SUCI-to-SUPI conversion and initial UDR data retrieval.
+func fetchAuthSubscription(supiOrSuci string) (string, *models.AuthenticationSubscription, *Nudr_DataRepository.APIClient, *models.ProblemDetails) {
+	supi, err := suci.ToSupi(supiOrSuci, udm_context.UDM_Self().SuciProfiles)
+	if err != nil {
+		logger.UeauLog.Errorln("suciToSupi error:", err.Error())
+		return "", nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected, Detail: err.Error()}
+	}
+
+	client, err := createUDMClientToUDR(supi)
+	if err != nil {
+		return "", nil, nil, util.ProblemDetailsSystemFailure(err.Error())
+	}
+
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)
 	if err != nil {
-		var problemDetails models.ProblemDetails
-		problemDetails.Detail = err.Error()
-		if res != nil {
-			switch res.StatusCode {
-			case http.StatusNotFound:
-				problemDetails.Status = http.StatusNotFound
-				problemDetails.Cause = userNotFoundError
-			case http.StatusForbidden:
-				problemDetails.Status = http.StatusForbidden
-				problemDetails.Cause = authenticationRejected
-			default:
-				problemDetails.Status = http.StatusInternalServerError
-				problemDetails.Cause = authenticationRejected
-			}
-		} else {
-			problemDetails.Status = http.StatusForbidden
-			problemDetails.Cause = authenticationRejected
-		}
-		logger.UeauLog.Errorln("return from UDR QueryAuthSubsData error")
-		return nil, &problemDetails
+		return "", nil, nil, mapUdrErrorToProblemDetails(res, err)
 	}
-	defer func() {
-		if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("QueryAuthSubsData response body cannot close: %+v", rspCloseErr)
-		}
-	}()
+	defer res.Body.Close()
 
-	/*
-		K, RAND, CK, IK: 128 bits (16 bytes) (hex len = 32)
-		SQN, AK: 48 bits (6 bytes) (hex len = 12) TS33.102 - 6.3.2
-		AMF: 16 bits (2 bytes) (hex len = 4) TS33.102 - Annex H
-	*/
+	return supi, &authSubs, client, nil
+}
 
-	hasK, hasOP, hasOPC := false, false, false
-
-	var kStr, opStr, opcStr string
-
-	k, op, opc := make([]byte, 16), make([]byte, 16), make([]byte, 16)
-
-	logger.UeauLog.Debugln("K", k)
-
-	if authSubs.PermanentKey != nil {
-		kStr = authSubs.PermanentKey.PermanentKeyValue
-		if len(kStr) == keyStrLen {
-			k, err = hex.DecodeString(kStr)
-			if err != nil {
-				logger.UeauLog.Errorln("err", err)
-			} else {
-				hasK = true
-			}
-		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: http.StatusForbidden,
-				Cause:  authenticationRejected,
-			}
-
-			logger.UeauLog.Errorln("kStr length is", len(kStr))
-			return nil, problemDetails
-		}
-	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-		}
-
-		logger.UeauLog.Errorln("Nil PermanentKey")
-		return nil, problemDetails
+// deriveAuthenticationKeys extracts K and identifies/generates OPC.
+func deriveAuthenticationKeys(authSubs *models.AuthenticationSubscription) ([]byte, []byte, *models.ProblemDetails) {
+	if authSubs.PermanentKey == nil || len(authSubs.PermanentKey.PermanentKeyValue) != keyStrLen {
+		return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected}
 	}
 
-	if authSubs.Milenage != nil {
-		if authSubs.Milenage.Op != nil {
-			opStr = authSubs.Milenage.Op.OpValue
-			if len(opStr) == opStrLen {
-				op, err = hex.DecodeString(opStr)
-				if err != nil {
-					logger.UeauLog.Errorln("err", err)
-				} else {
-					hasOP = true
-				}
-			} else {
-				logger.UeauLog.Errorln("opStr length is", len(opStr))
-			}
-		} else {
-			logger.UeauLog.Infoln("Nil Op")
-		}
-	} else {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-		}
-
-		logger.UeauLog.Infoln("Nil Milenage")
-		return nil, problemDetails
-	}
-
-	if authSubs.Opc != nil && authSubs.Opc.OpcValue != "" {
-		opcStr = authSubs.Opc.OpcValue
-		if len(opcStr) == opcStrLen {
-			opc, err = hex.DecodeString(opcStr)
-			if err != nil {
-				logger.UeauLog.Errorln("err", err)
-			} else {
-				hasOPC = true
-			}
-		} else {
-			logger.UeauLog.Errorln("opStr length is", len(opStr))
-		}
-	} else {
-		logger.UeauLog.Infoln("Nil Opc")
-	}
-
-	if !hasOPC && !hasOP {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-		}
-
-		return nil, problemDetails
-	}
-
-	if !hasOPC {
-		if hasK && hasOP {
-			opc, err = milenage.GenerateOPC(k, op)
-			if err != nil {
-				logger.UeauLog.Errorln("milenage GenerateOPC err", err)
-			}
-		} else {
-			problemDetails = &models.ProblemDetails{
-				Status: http.StatusForbidden,
-				Cause:  authenticationRejected,
-			}
-
-			logger.UeauLog.Errorln("unable to derive OPC")
-			return nil, problemDetails
-		}
-	}
-
-	sqnStr := strictHex(authSubs.SequenceNumber, 12)
-	logger.UeauLog.Debugln("sqnStr", sqnStr)
-	sqn, err := hex.DecodeString(sqnStr)
+	k, err := hex.DecodeString(authSubs.PermanentKey.PermanentKeyValue)
 	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: err.Error(),
-		}
-
-		logger.UeauLog.Errorln("err", err)
-		return nil, problemDetails
+		return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected, Detail: "K decode fail"}
 	}
 
-	logger.UeauLog.Debugln("sqn", sqn)
-
-	RAND := make([]byte, 16)
-	_, err = rand.Read(RAND)
-	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: err.Error(),
-		}
-
-		logger.UeauLog.Errorln("err", err)
-		return nil, problemDetails
-	}
-
-	AMF, err := hex.DecodeString("8000")
-	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: err.Error(),
-		}
-
-		logger.UeauLog.Errorln("err", err)
-		return nil, problemDetails
-	}
-
-	// re-synchroniztion
-	if authInfoRequest.ResynchronizationInfo != nil {
-		Auts, deCodeErr := hex.DecodeString(authInfoRequest.ResynchronizationInfo.Auts)
-		if deCodeErr != nil {
-			problemDetails = &models.ProblemDetails{
-				Status: http.StatusForbidden,
-				Cause:  authenticationRejected,
-				Detail: deCodeErr.Error(),
-			}
-
-			logger.UeauLog.Errorln("err", deCodeErr)
-			return nil, problemDetails
-		}
-
-		randHex, deCodeErr := hex.DecodeString(authInfoRequest.ResynchronizationInfo.Rand)
-		if deCodeErr != nil {
-			problemDetails = &models.ProblemDetails{
-				Status: http.StatusForbidden,
-				Cause:  authenticationRejected,
-				Detail: deCodeErr.Error(),
-			}
-
-			logger.UeauLog.Errorln("err", deCodeErr)
-			return nil, problemDetails
-		}
-
-		SQNms, macS := aucSQN(opc, k, Auts, randHex)
-		if reflect.DeepEqual(macS, Auts[6:]) {
-			_, err = rand.Read(RAND)
-			if err != nil {
-				problemDetails = &models.ProblemDetails{
-					Status: http.StatusForbidden,
-					Cause:  authenticationRejected,
-					Detail: err.Error(),
-				}
-
-				logger.UeauLog.Errorln("err", err)
-				return nil, problemDetails
-			}
-
-			// increment sqn authSubs.SequenceNumber
-			bigSQN := big.NewInt(0)
-			sqnStr = hex.EncodeToString(SQNms)
-			logger.UeauLog.Infof("SQNstr %s", sqnStr)
-			bigSQN.SetString(sqnStr, 16)
-
-			bigInc := big.NewInt(ind + 1)
-
-			bigP := big.NewInt(SqnMAx)
-			bigSQN = bigInc.Add(bigSQN, bigInc)
-			bigSQN = bigSQN.Mod(bigSQN, bigP)
-			sqnStr = fmt.Sprintf("%x", bigSQN)
-			sqnStr = strictHex(sqnStr, 12)
-		} else {
-			logger.UeauLog.Errorln("Re-Sync MAC failed", supi)
-			logger.UeauLog.Errorln("MACS", macS)
-			logger.UeauLog.Errorln("Auts[6:]", Auts[6:])
-			logger.UeauLog.Errorln("Sqn", SQNms)
-			problemDetails = &models.ProblemDetails{
-				Status: http.StatusForbidden,
-				Cause:  "modification is rejected",
-			}
-			return nil, problemDetails
+	var op, opc []byte
+	if authSubs.Opc != nil && len(authSubs.Opc.OpcValue) == opcStrLen {
+		opc, err = hex.DecodeString(authSubs.Opc.OpcValue)
+		if err == nil {
+			return k, opc, nil
 		}
 	}
 
-	// increment sqn
-	bigSQN := big.NewInt(0)
-	sqn, err = hex.DecodeString(sqnStr)
-	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: err.Error(),
-		}
-
-		logger.UeauLog.Errorln("err", err)
-		return nil, problemDetails
-	}
-
-	bigSQN.SetString(sqnStr, 16)
-
-	bigInc := big.NewInt(1)
-	bigSQN = bigInc.Add(bigSQN, bigInc)
-
-	SQNheStr := fmt.Sprintf("%x", bigSQN)
-	SQNheStr = strictHex(SQNheStr, 12)
-	patchItemArray := []models.PatchItem{
-		{
-			Op:    models.PatchOperation_REPLACE,
-			Path:  "/sequenceNumber",
-			Value: SQNheStr,
-		},
-	}
-
-	var rsp *http.Response
-	rsp, err = client.AuthenticationDataDocumentApi.ModifyAuthentication(
-		context.Background(), supi, patchItemArray)
-	if err != nil {
-		problemDetails = &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  "modification is rejected ",
-			Detail: err.Error(),
-		}
-
-		logger.UeauLog.Errorln("update sqn error", err)
-		return nil, problemDetails
-	}
-	defer func() {
-		if rspCloseErr := rsp.Body.Close(); rspCloseErr != nil {
-			logger.SdmLog.Errorf("ModifyAuthentication response body cannot close: %+v", rspCloseErr)
-		}
-	}()
-
-	// Run milenage
-	macA, macS := make([]byte, 8), make([]byte, 8)
-	CK, IK := make([]byte, 16), make([]byte, 16)
-	RES := make([]byte, 8)
-	AK, AKstar := make([]byte, 6), make([]byte, 6)
-
-	// Generate macA, macS
-	err = milenage.F1(opc, k, RAND, sqn, AMF, macA, macS)
-	if err != nil {
-		logger.UeauLog.Errorln("milenage F1 err ", err)
-	}
-
-	// Generate RES, CK, IK, AK, AKstar
-	// RES == XRES (expected RES) for server
-	err = milenage.F2345(opc, k, RAND, RES, CK, IK, AK, AKstar)
-	if err != nil {
-		logger.UeauLog.Errorln("milenage F2345 err", err)
-	}
-
-	// Generate AUTN
-	SQNxorAK := make([]byte, 6)
-	for i := 0; i < len(sqn); i++ {
-		SQNxorAK[i] = sqn[i] ^ AK[i]
-	}
-	AUTN := append(append(SQNxorAK, AMF...), macA...)
-	logger.UeauLog.Infof("AUTN = %x", AUTN)
-
-	var av models.AuthenticationVector
-	if authSubs.AuthenticationMethod == models.AuthMethod__5_G_AKA {
-		response.AuthType = models.AuthType__5_G_AKA
-
-		// derive XRES*
-		key := append(CK, IK...)
-		FC := ueauth.FC_FOR_RES_STAR_XRES_STAR_DERIVATION
-		P0 := []byte(authInfoRequest.ServingNetworkName)
-		P1 := RAND
-		P2 := RES
-
-		kdfValForXresStar, err := ueauth.GetKDFValue(
-			key, FC, P0, ueauth.KDFLen(P0), P1, ueauth.KDFLen(P1), P2, ueauth.KDFLen(P2))
+	if authSubs.Milenage != nil && authSubs.Milenage.Op != nil && len(authSubs.Milenage.Op.OpValue) == opStrLen {
+		op, err = hex.DecodeString(authSubs.Milenage.Op.OpValue)
 		if err != nil {
-			logger.UeauLog.Error(err)
+			return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected, Detail: "OP decode fail"}
 		}
-		xresStar := kdfValForXresStar[len(kdfValForXresStar)/2:]
-
-		// derive Kausf
-		FC = ueauth.FC_FOR_KAUSF_DERIVATION
-		P0 = []byte(authInfoRequest.ServingNetworkName)
-		P1 = SQNxorAK
-		kdfValForKausf, err := ueauth.GetKDFValue(key, FC, P0, ueauth.KDFLen(P0), P1, ueauth.KDFLen(P1))
+		opc, err = milenage.GenerateOPC(k, op)
 		if err != nil {
-			logger.UeauLog.Error(err)
+			return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected, Detail: "OPC derive fail"}
 		}
-
-		// Fill in rand, xresStar, autn, kausf
-		av.Rand = hex.EncodeToString(RAND)
-		av.XresStar = hex.EncodeToString(xresStar)
-		av.Autn = hex.EncodeToString(AUTN)
-		av.Kausf = hex.EncodeToString(kdfValForKausf)
-	} else { // EAP-AKA'
-		response.AuthType = models.AuthType_EAP_AKA_PRIME
-
-		// derive CK' and IK'
-		key := append(CK, IK...)
-		FC := ueauth.FC_FOR_CK_PRIME_IK_PRIME_DERIVATION
-		P0 := []byte(authInfoRequest.ServingNetworkName)
-		P1 := SQNxorAK
-		kdfVal, err := ueauth.GetKDFValue(key, FC, P0, ueauth.KDFLen(P0), P1, ueauth.KDFLen(P1))
-		if err != nil {
-			logger.UeauLog.Error(err)
-		}
-
-		// For TS 35.208 test set 19 & RFC 5448 test vector 1
-		// CK': 0093 962d 0dd8 4aa5 684b 045c 9edf fa04
-		// IK': ccfc 230c a74f cc96 c0a5 d611 64f5 a76
-
-		ckPrime := kdfVal[:len(kdfVal)/2]
-		ikPrime := kdfVal[len(kdfVal)/2:]
-
-		// Fill in rand, xres, autn, ckPrime, ikPrime
-		av.Rand = hex.EncodeToString(RAND)
-		av.Xres = hex.EncodeToString(RES)
-		av.Autn = hex.EncodeToString(AUTN)
-		av.CkPrime = hex.EncodeToString(ckPrime)
-		av.IkPrime = hex.EncodeToString(ikPrime)
+		return k, opc, nil
 	}
 
-	response.AuthenticationVector = &av
-	response.Supi = supi
-	return response, nil
+	return nil, nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected}
+}
+
+func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs *models.AuthenticationSubscription, req models.AuthenticationInfoRequest, k, opc []byte) ([]byte, []byte, *models.ProblemDetails) {
+	sqnStr := strictHex(subs.SequenceNumber, 12)
+	randBytes := make([]byte, 16)
+	if _, err := rand.Read(randBytes); err != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("Random generator failed")
+	}
+
+	if req.ResynchronizationInfo != nil {
+		var prob *models.ProblemDetails
+		sqnStr, prob = performResync(supi, req.ResynchronizationInfo, k, opc, randBytes)
+		if prob != nil {
+			return nil, nil, prob
+		}
+	}
+
+	if prob := updateSqnInUdr(client, supi, sqnStr); prob != nil {
+		return nil, nil, prob
+	}
+
+	sqnBytes, err := hex.DecodeString(sqnStr)
+	if err != nil {
+		return nil, nil, util.ProblemDetailsSystemFailure("SQN string is not valid hex")
+	}
+	return sqnBytes, randBytes, nil
+}
+
+func performResync(supi string, resync *models.ResynchronizationInfo, k, opc, newRand []byte) (string, *models.ProblemDetails) {
+	auts, err1 := hex.DecodeString(resync.Auts)
+	oldRand, err2 := hex.DecodeString(resync.Rand)
+	if err1 != nil || err2 != nil {
+		return "", &models.ProblemDetails{
+			Status: http.StatusForbidden,
+			Cause:  authenticationRejected,
+			Detail: "Resync parameters are not valid hex",
+		}
+	}
+
+	sqnMs, macS := aucSQN(opc, k, auts, oldRand)
+	if !reflect.DeepEqual(macS, auts[6:]) {
+		logger.UeauLog.Errorln("Re-Sync MAC failed", supi)
+		return "", &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
+	}
+
+	bigSQN := big.NewInt(0).SetBytes(sqnMs)
+	bigInc := big.NewInt(ind + 1)
+	bigSQN.Add(bigSQN, bigInc).Mod(bigSQN, big.NewInt(SqnMAx))
+
+	return strictHex(fmt.Sprintf("%x", bigSQN), 12), nil
+}
+
+func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr string) *models.ProblemDetails {
+	bigSQN, _ := big.NewInt(0).SetString(currentSqnStr, 16)
+	nextSqnStr := strictHex(fmt.Sprintf("%x", bigSQN.Add(bigSQN, big.NewInt(1))), 12)
+
+	patch := []models.PatchItem{{Op: models.PatchOperation_REPLACE, Path: "/sequenceNumber", Value: nextSqnStr}}
+	rsp, err := client.AuthenticationDataDocumentApi.ModifyAuthentication(context.Background(), supi, patch)
+	if err != nil {
+		return &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected", Detail: err.Error()}
+	}
+	rsp.Body.Close()
+	return nil
+}
+
+func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
+	// FIX: errcheck for hardcoded hex string
+	amf, err := hex.DecodeString("8000")
+	if err != nil {
+		return milenageResult{}, err
+	}
+
+	res := milenageResult{
+		macA: make([]byte, 8), ck: make([]byte, 16), ik: make([]byte, 16),
+		res: make([]byte, 8), ak: make([]byte, 6),
+	}
+
+	if err := milenage.F1(opc, k, rand, sqn, amf, res.macA, make([]byte, 8)); err != nil {
+		return res, err
+	}
+	if err := milenage.F2345(opc, k, rand, res.res, res.ck, res.ik, res.ak, make([]byte, 6)); err != nil {
+		return res, err
+	}
+
+	return res, nil
+}
+
+func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.AuthenticationSubscription, m milenageResult, supi string, randBytes []byte) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
+	// FIX: errcheck for AMF and SQN decoding
+	amf, err := hex.DecodeString("8000")
+	if err != nil {
+		return nil, util.ProblemDetailsSystemFailure("Internal error: AMF decode failed")
+	}
+
+	sqnBytes, err := hex.DecodeString(strictHex(subs.SequenceNumber, 12))
+	if err != nil {
+		return nil, util.ProblemDetailsSystemFailure("Internal error: SQN decode failed")
+	}
+
+	sqnXorAk := make([]byte, 6)
+	for i := 0; i < 6; i++ {
+		sqnXorAk[i] = sqnBytes[i] ^ m.ak[i]
+	}
+	autn := append(append(sqnXorAk, amf...), m.macA...)
+
+	av := &models.AuthenticationVector{Rand: hex.EncodeToString(randBytes), Autn: hex.EncodeToString(autn)}
+	result := &models.AuthenticationInfoResult{Supi: supi, AuthenticationVector: av}
+
+	key := append(m.ck, m.ik...)
+	snName := []byte(req.ServingNetworkName)
+
+	if subs.AuthenticationMethod == models.AuthMethod__5_G_AKA {
+		result.AuthType = models.AuthType__5_G_AKA
+		xresStar, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_RES_STAR_XRES_STAR_DERIVATION, snName, ueauth.KDFLen(snName), randBytes, ueauth.KDFLen(randBytes), m.res, ueauth.KDFLen(m.res))
+		if err != nil {
+			return nil, util.ProblemDetailsSystemFailure(err.Error())
+		}
+		kausf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_KAUSF_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
+		if err != nil {
+			return nil, util.ProblemDetailsSystemFailure(err.Error())
+		}
+		av.XresStar = hex.EncodeToString(xresStar[len(xresStar)/2:])
+		av.Kausf = hex.EncodeToString(kausf)
+	} else {
+		result.AuthType = models.AuthType_EAP_AKA_PRIME
+		kdf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_CK_PRIME_IK_PRIME_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
+		if err != nil {
+			return nil, util.ProblemDetailsSystemFailure(err.Error())
+		}
+		av.Xres = hex.EncodeToString(m.res)
+		av.CkPrime = hex.EncodeToString(kdf[:16])
+		av.IkPrime = hex.EncodeToString(kdf[16:])
+	}
+	return result, nil
+}
+
+func mapUdrErrorToProblemDetails(res *http.Response, err error) *models.ProblemDetails {
+	pd := &models.ProblemDetails{Detail: err.Error(), Status: http.StatusForbidden, Cause: authenticationRejected}
+	if res != nil {
+		switch res.StatusCode {
+		case http.StatusNotFound:
+			pd.Status, pd.Cause = http.StatusNotFound, userNotFoundError
+		case http.StatusForbidden:
+			pd.Status, pd.Cause = http.StatusForbidden, authenticationRejected
+		default:
+			pd.Status = http.StatusInternalServerError
+		}
+	}
+	return pd
 }
 
 // New handler for the PUT request to delete an authentication event.
