@@ -25,6 +25,8 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const contentTypeJson = "application/json"
+
 // HTTPCreateEeSubscription - Subscribe
 func HTTPCreateEeSubscription(c *gin.Context) {
 	var eeSubscriptionReq models.EeSubscription
@@ -42,7 +44,7 @@ func HTTPCreateEeSubscription(c *gin.Context) {
 		return
 	}
 
-	err = openapi.Deserialize(&eeSubscriptionReq, requestBody, "application/json")
+	err = openapi.Deserialize(&eeSubscriptionReq, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -60,7 +62,7 @@ func HTTPCreateEeSubscription(c *gin.Context) {
 
 	rsp := producer.HandleCreateEeSubscription(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.EeLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -70,6 +72,6 @@ func HTTPCreateEeSubscription(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }

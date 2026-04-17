@@ -43,7 +43,7 @@ func HTTPUpdateAmfNon3gppAccess(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&amfNon3GppAccessRegistrationModification, requestBody, "application/json")
+	err = openapi.Deserialize(&amfNon3GppAccessRegistrationModification, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -61,7 +61,7 @@ func HTTPUpdateAmfNon3gppAccess(c *gin.Context) {
 
 	rsp := producer.HandleUpdateAmfNon3gppAccessRequest(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.UecmLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -71,6 +71,6 @@ func HTTPUpdateAmfNon3gppAccess(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }

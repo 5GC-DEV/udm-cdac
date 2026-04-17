@@ -25,6 +25,8 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const contentTypeJson = "application/json"
+
 // ConfirmAuth - Create a new confirmation event
 func HTTPConfirmAuth(c *gin.Context) {
 	var authEvent models.AuthEvent
@@ -43,7 +45,7 @@ func HTTPConfirmAuth(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&authEvent, requestBody, "application/json")
+	err = openapi.Deserialize(&authEvent, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -61,7 +63,7 @@ func HTTPConfirmAuth(c *gin.Context) {
 	// This now contains the Status, Header, and Body
 	rsp := producer.HandleConfirmAuthDataRequest(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.UeauLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -79,6 +81,6 @@ func HTTPConfirmAuth(c *gin.Context) {
 				}
 			}
 		}
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }

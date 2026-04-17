@@ -23,6 +23,13 @@ import (
 	utilLogger "github.com/omec-project/util/logger"
 )
 
+const (
+	pathAmf3gppAccess     = "/:ueId/registrations/amf-3gpp-access"
+	pathAmfNon3gppAccess  = "/:ueId/registrations/amf-non-3gpp-access"
+	pathSmsf3gppAccess    = "/:ueId/registrations/smsf-3gpp-access"
+	pathSmsfNon3gppAccess = "/:ueId/registrations/smsf-non-3gpp-access"
+)
+
 // Route is the information for every URI.
 type Route struct {
 	// Name is the name of this Route.
@@ -82,42 +89,42 @@ var routes = Routes{
 	{
 		"GetAmf3gppAccess",
 		strings.ToUpper("Get"),
-		"/:ueId/registrations/amf-3gpp-access",
+		pathAmf3gppAccess,
 		HTTPGetAmf3gppAccess,
 	},
 
 	{
 		"GetAmfNon3gppAccess",
 		strings.ToUpper("Get"),
-		"/:ueId/registrations/amf-non-3gpp-access",
+		pathAmfNon3gppAccess,
 		HTTPGetAmfNon3gppAccess,
 	},
 
 	{
 		"RegistrationAmf3gppAccess",
 		strings.ToUpper("Put"),
-		"/:ueId/registrations/amf-3gpp-access",
+		pathAmf3gppAccess,
 		HTTPRegistrationAmf3gppAccess,
 	},
 
 	{
 		"Register",
 		strings.ToUpper("Put"),
-		"/:ueId/registrations/amf-non-3gpp-access",
+		pathAmfNon3gppAccess,
 		HTTPRegistrationAmfNon3gppAccess,
 	},
 
 	{
 		"UpdateAmf3gppAccess",
 		strings.ToUpper("Patch"),
-		"/:ueId/registrations/amf-3gpp-access",
+		pathAmf3gppAccess,
 		HTTPUpdateAmf3gppAccess,
 	},
 
 	{
 		"UpdateAmfNon3gppAccess",
 		strings.ToUpper("Patch"),
-		"/:ueId/registrations/amf-non-3gpp-access",
+		pathAmfNon3gppAccess,
 		HTTPUpdateAmfNon3gppAccess,
 	},
 
@@ -138,42 +145,42 @@ var routes = Routes{
 	{
 		"GetSmsf3gppAccess",
 		strings.ToUpper("Get"),
-		"/:ueId/registrations/smsf-3gpp-access",
+		pathSmsf3gppAccess,
 		HTTPGetSmsf3gppAccess,
 	},
 
 	{
 		"DeregistrationSmsf3gppAccess",
 		strings.ToUpper("Delete"),
-		"/:ueId/registrations/smsf-3gpp-access",
+		pathSmsf3gppAccess,
 		HTTPDeregistrationSmsf3gppAccess,
 	},
 
 	{
 		"DeregistrationSmsfNon3gppAccess",
 		strings.ToUpper("Delete"),
-		"/:ueId/registrations/smsf-non-3gpp-access",
+		pathSmsfNon3gppAccess,
 		HTTPDeregistrationSmsfNon3gppAccess,
 	},
 
 	{
 		"GetSmsfNon3gppAccess",
 		strings.ToUpper("Get"),
-		"/:ueId/registrations/smsf-non-3gpp-access",
+		pathSmsfNon3gppAccess,
 		HTTPGetSmsfNon3gppAccess,
 	},
 
 	{
 		"UpdateSMSFReg3GPP",
 		strings.ToUpper("Put"),
-		"/:ueId/registrations/smsf-3gpp-access",
+		pathSmsf3gppAccess,
 		HTTPUpdateSMSFReg3GPP,
 	},
 
 	{
 		"RegistrationSmsfNon3gppAccess",
 		strings.ToUpper("Put"),
-		"/:ueId/registrations/smsf-non-3gpp-access",
+		pathSmsfNon3gppAccess,
 		HTTPRegistrationSmsfNon3gppAccess,
 	},
 }

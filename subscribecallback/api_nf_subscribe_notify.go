@@ -18,6 +18,8 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const contentTypeJson = "application/json"
+
 func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 	var nfSubscriptionStatusNotification models.NotificationData
 
@@ -34,7 +36,7 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 		return
 	}
 
-	err = openapi.Deserialize(&nfSubscriptionStatusNotification, requestBody, "application/json")
+	err = openapi.Deserialize(&nfSubscriptionStatusNotification, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -51,7 +53,7 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 
 	rsp := producer.HandleNfSubscriptionStatusNotify(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.CallbackLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -61,6 +63,6 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else if rsp.Body != nil {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }

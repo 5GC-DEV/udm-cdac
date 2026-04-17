@@ -25,6 +25,8 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
+const contentTypeJson = "application/json"
+
 // Register - register as AMF for non-3GPP access
 func HTTPRegistrationAmfNon3gppAccess(c *gin.Context) {
 	var amfNon3GppAccessRegistration models.AmfNon3GppAccessRegistration
@@ -44,7 +46,7 @@ func HTTPRegistrationAmfNon3gppAccess(c *gin.Context) {
 	}
 
 	// step 2: convert requestBody to openapi models
-	err = openapi.Deserialize(&amfNon3GppAccessRegistration, requestBody, "application/json")
+	err = openapi.Deserialize(&amfNon3GppAccessRegistration, requestBody, contentTypeJson)
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
@@ -65,7 +67,7 @@ func HTTPRegistrationAmfNon3gppAccess(c *gin.Context) {
 	for key, val := range rsp.Header { // header response is optional
 		c.Header(key, val[0])
 	}
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.Serialize(rsp.Body, contentTypeJson)
 	if err != nil {
 		logger.UecmLog.Errorln(err)
 		problemDetails := models.ProblemDetails{
@@ -75,6 +77,6 @@ func HTTPRegistrationAmfNon3gppAccess(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
+		c.Data(rsp.Status, contentTypeJson, responseBody)
 	}
 }
