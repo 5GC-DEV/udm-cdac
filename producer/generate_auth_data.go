@@ -332,7 +332,11 @@ func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs
 
 	// Use the current sqnStr for the crypto calculation (sqnBytes)
 	// but save the INCREMENTED value to the UDR.
-	sqnBytes, _ := hex.DecodeString(sqnStr)
+	sqnBytes, err := hex.DecodeString(sqnStr)
+	if err != nil {
+		logger.UeauLog.Errorln("SQN hex decode failed:", err)
+		return nil, nil, util.ProblemDetailsSystemFailure("Internal error: SQN decode failed")
+	}
 
 	// 3. Update UDR with the NEXT sequence number
 	if prob := updateSqnInUdr(client, supi, sqnStr); prob != nil {
