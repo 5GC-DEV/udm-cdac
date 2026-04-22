@@ -248,7 +248,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	// 5. Derive Authentication Vector (5G AKA or EAP-AKA')
-	response, prob := buildAuthResponse(authInfoRequest, authSubs, mOut, supi, randBytes)
+	response, prob := buildAuthResponse(authInfoRequest, authSubs, mOut, supi, randBytes, sqnBytes)
 	if prob != nil {
 		return nil, prob
 	}
@@ -313,35 +313,30 @@ func deriveAuthenticationKeys(authSubs *models.AuthenticationSubscription) ([]by
 }
 
 func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs *models.AuthenticationSubscription, req models.AuthenticationInfoRequest, k, opc []byte) ([]byte, []byte, *models.ProblemDetails) {
-	// Start with the SQN from the database
+	// 1. Get the base SQN (from UDR)
 	sqnStr := strictHex(subs.SequenceNumber, 12)
 
-	// Default RAND
 	randBytes := make([]byte, 16)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, nil, util.ProblemDetailsSystemFailure("Random generator failed")
 	}
 
-	// 1. Handle Resync (This overrides the base sqnStr and randBytes)
+	// 2. Handle Resync (updates sqnStr and randBytes if necessary)
 	if req.ResynchronizationInfo != nil {
 		var prob *models.ProblemDetails
-		// Resync produces a new base SQN AND a brand new RAND
 		sqnStr, randBytes, prob = performResync(supi, req.ResynchronizationInfo, k, opc)
 		if prob != nil {
 			return nil, nil, prob
 		}
 	}
 
-	// 2. Perform the mandatory +1 increment and Update UDR
-	nextSqnStr, prob := updateSqnInUdr(client, supi, sqnStr)
-	if prob != nil {
-		return nil, nil, prob
-	}
+	// Use the current sqnStr for the crypto calculation (sqnBytes)
+	// but save the INCREMENTED value to the UDR.
+	sqnBytes, _ := hex.DecodeString(sqnStr)
 
-	// 3. Use the incremented SQN for the actual Milenage calculation
-	sqnBytes, err := hex.DecodeString(nextSqnStr)
-	if err != nil {
-		return nil, nil, util.ProblemDetailsSystemFailure("SQN string is not valid hex")
+	// 3. Update UDR with the NEXT sequence number
+	if prob := updateSqnInUdr(client, supi, sqnStr); prob != nil {
+		return nil, nil, prob
 	}
 
 	return sqnBytes, randBytes, nil
@@ -377,34 +372,22 @@ func performResync(supi string, resync *models.ResynchronizationInfo, k, opc []b
 	return strictHex(fmt.Sprintf("%x", bigSQN), 12), newRand, nil
 }
 
-func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr string) (string, *models.ProblemDetails) {
-	// Standard increment: nextSqn = currentSqn + 1
+func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr string) *models.ProblemDetails {
 	bigSQN := big.NewInt(0)
 	bigSQN.SetString(currentSqnStr, 16)
 
+	// Increment for the NEXT authentication attempt
 	bigInc := big.NewInt(1)
 	bigSQN = bigSQN.Add(bigSQN, bigInc)
-
 	nextSqnStr := strictHex(fmt.Sprintf("%x", bigSQN), 12)
 
-	// Prepare the Patch for UDR
-	patch := []models.PatchItem{
-		{
-			Op:    models.PatchOperation_REPLACE,
-			Path:  "/sequenceNumber",
-			Value: nextSqnStr,
-		},
-	}
-
-	// Update UDR
+	patch := []models.PatchItem{{Op: models.PatchOperation_REPLACE, Path: "/sequenceNumber", Value: nextSqnStr}}
 	rsp, err := client.AuthenticationDataDocumentApi.ModifyAuthentication(context.Background(), supi, patch)
 	if err != nil {
-		logger.UeauLog.Errorln("Update SQN error:", err)
-		return "", &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
+		return &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
 	}
 	defer rsp.Body.Close()
-
-	return nextSqnStr, nil
+	return nil
 }
 
 func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
@@ -429,52 +412,64 @@ func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
 	return res, nil
 }
 
-func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.AuthenticationSubscription, m milenageResult, supi string, randBytes []byte) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
-	// FIX: errcheck for AMF and SQN decoding
+func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.AuthenticationSubscription, m milenageResult, supi string, randBytes []byte, sqnBytes []byte) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
+	// 1. Decode AMF
 	amf, err := hex.DecodeString("8000")
 	if err != nil {
 		return nil, util.ProblemDetailsSystemFailure("Internal error: AMF decode failed")
 	}
 
-	sqnBytes, err := hex.DecodeString(strictHex(subs.SequenceNumber, 12))
-	if err != nil {
-		return nil, util.ProblemDetailsSystemFailure("Internal error: SQN decode failed")
-	}
-
+	// 2. Generate SQN XOR AK
+	// CRITICAL: We use the sqnBytes passed from the Milenage step
 	sqnXorAk := make([]byte, 6)
 	for i := 0; i < 6; i++ {
 		sqnXorAk[i] = sqnBytes[i] ^ m.ak[i]
 	}
+
+	// 3. Construct AUTN: (SQN ^ AK) || AMF || MAC
 	autn := append(append(sqnXorAk, amf...), m.macA...)
 
-	av := &models.AuthenticationVector{Rand: hex.EncodeToString(randBytes), Autn: hex.EncodeToString(autn)}
+	av := &models.AuthenticationVector{
+		Rand: hex.EncodeToString(randBytes),
+		Autn: hex.EncodeToString(autn),
+	}
 	result := &models.AuthenticationInfoResult{Supi: supi, AuthenticationVector: av}
 
 	key := append(m.ck, m.ik...)
 	snName := []byte(req.ServingNetworkName)
 
+	// 4. Derive Vector based on Method
 	if subs.AuthenticationMethod == models.AuthMethod__5_G_AKA {
 		result.AuthType = models.AuthType__5_G_AKA
+
+		// Derive XRES*
 		xresStar, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_RES_STAR_XRES_STAR_DERIVATION, snName, ueauth.KDFLen(snName), randBytes, ueauth.KDFLen(randBytes), m.res, ueauth.KDFLen(m.res))
 		if err != nil {
 			return nil, util.ProblemDetailsSystemFailure(err.Error())
 		}
+
+		// Derive Kausf (uses SQN XOR AK)
 		kausf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_KAUSF_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
 		if err != nil {
 			return nil, util.ProblemDetailsSystemFailure(err.Error())
 		}
+
 		av.XresStar = hex.EncodeToString(xresStar[len(xresStar)/2:])
 		av.Kausf = hex.EncodeToString(kausf)
 	} else {
 		result.AuthType = models.AuthType_EAP_AKA_PRIME
+
+		// Derive CK' and IK' (uses SQN XOR AK)
 		kdf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_CK_PRIME_IK_PRIME_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
 		if err != nil {
 			return nil, util.ProblemDetailsSystemFailure(err.Error())
 		}
+
 		av.Xres = hex.EncodeToString(m.res)
 		av.CkPrime = hex.EncodeToString(kdf[:16])
 		av.IkPrime = hex.EncodeToString(kdf[16:])
 	}
+
 	return result, nil
 }
 
