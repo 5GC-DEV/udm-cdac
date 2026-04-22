@@ -313,66 +313,98 @@ func deriveAuthenticationKeys(authSubs *models.AuthenticationSubscription) ([]by
 }
 
 func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs *models.AuthenticationSubscription, req models.AuthenticationInfoRequest, k, opc []byte) ([]byte, []byte, *models.ProblemDetails) {
+	// Start with the SQN from the database
 	sqnStr := strictHex(subs.SequenceNumber, 12)
+
+	// Default RAND
 	randBytes := make([]byte, 16)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, nil, util.ProblemDetailsSystemFailure("Random generator failed")
 	}
 
+	// 1. Handle Resync (This overrides the base sqnStr and randBytes)
 	if req.ResynchronizationInfo != nil {
 		var prob *models.ProblemDetails
-		sqnStr, prob = performResync(supi, req.ResynchronizationInfo, k, opc, randBytes)
+		// Resync produces a new base SQN AND a brand new RAND
+		sqnStr, randBytes, prob = performResync(supi, req.ResynchronizationInfo, k, opc)
 		if prob != nil {
 			return nil, nil, prob
 		}
 	}
 
-	if prob := updateSqnInUdr(client, supi, sqnStr); prob != nil {
+	// 2. Perform the mandatory +1 increment and Update UDR
+	nextSqnStr, prob := updateSqnInUdr(client, supi, sqnStr)
+	if prob != nil {
 		return nil, nil, prob
 	}
 
-	sqnBytes, err := hex.DecodeString(sqnStr)
+	// 3. Use the incremented SQN for the actual Milenage calculation
+	sqnBytes, err := hex.DecodeString(nextSqnStr)
 	if err != nil {
 		return nil, nil, util.ProblemDetailsSystemFailure("SQN string is not valid hex")
 	}
+
 	return sqnBytes, randBytes, nil
 }
 
-func performResync(supi string, resync *models.ResynchronizationInfo, k, opc, newRand []byte) (string, *models.ProblemDetails) {
+func performResync(supi string, resync *models.ResynchronizationInfo, k, opc []byte) (string, []byte, *models.ProblemDetails) {
 	auts, err1 := hex.DecodeString(resync.Auts)
 	oldRand, err2 := hex.DecodeString(resync.Rand)
 	if err1 != nil || err2 != nil {
-		return "", &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: "Resync parameters are not valid hex",
-		}
+		return "", nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected}
 	}
 
+	// Calculate SQNms and MacS from AUTS
 	sqnMs, macS := aucSQN(opc, k, auts, oldRand)
 	if !reflect.DeepEqual(macS, auts[6:]) {
 		logger.UeauLog.Errorln("Re-Sync MAC failed", supi)
-		return "", &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
+		return "", nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
+	}
+
+	// If MAC matches, generate a NEW RAND for the subsequent vector
+	newRand := make([]byte, 16)
+	if _, err := rand.Read(newRand); err != nil {
+		return "", nil, util.ProblemDetailsSystemFailure("Random generator failed during resync")
 	}
 
 	bigSQN := big.NewInt(0).SetBytes(sqnMs)
 	bigInc := big.NewInt(ind + 1)
-	bigSQN.Add(bigSQN, bigInc).Mod(bigSQN, big.NewInt(SqnMAx))
 
-	return strictHex(fmt.Sprintf("%x", bigSQN), 12), nil
+	// This replicates the original math exactly
+	bigSQN = bigSQN.Add(bigSQN, bigInc)
+	bigSQN = bigSQN.Mod(bigSQN, big.NewInt(SqnMAx))
+
+	return strictHex(fmt.Sprintf("%x", bigSQN), 12), newRand, nil
 }
 
-func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr string) *models.ProblemDetails {
-	bigSQN, _ := big.NewInt(0).SetString(currentSqnStr, 16)
-	nextSqnStr := strictHex(fmt.Sprintf("%x", bigSQN.Add(bigSQN, big.NewInt(1))), 12)
+func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr string) (string, *models.ProblemDetails) {
+	// Standard increment: nextSqn = currentSqn + 1
+	bigSQN := big.NewInt(0)
+	bigSQN.SetString(currentSqnStr, 16)
 
-	patch := []models.PatchItem{{Op: models.PatchOperation_REPLACE, Path: "/sequenceNumber", Value: nextSqnStr}}
+	bigInc := big.NewInt(1)
+	bigSQN = bigSQN.Add(bigSQN, bigInc)
+
+	nextSqnStr := strictHex(fmt.Sprintf("%x", bigSQN), 12)
+
+	// Prepare the Patch for UDR
+	patch := []models.PatchItem{
+		{
+			Op:    models.PatchOperation_REPLACE,
+			Path:  "/sequenceNumber",
+			Value: nextSqnStr,
+		},
+	}
+
+	// Update UDR
 	rsp, err := client.AuthenticationDataDocumentApi.ModifyAuthentication(context.Background(), supi, patch)
 	if err != nil {
-		return &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected", Detail: err.Error()}
+		logger.UeauLog.Errorln("Update SQN error:", err)
+		return "", &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
 	}
-	rsp.Body.Close()
-	return nil
+	defer rsp.Body.Close()
+
+	return nextSqnStr, nil
 }
 
 func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
