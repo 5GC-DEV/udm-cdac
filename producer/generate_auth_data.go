@@ -248,7 +248,7 @@ func GenerateAuthDataProcedure(authInfoRequest models.AuthenticationInfoRequest,
 	}
 
 	// 5. Derive Authentication Vector (5G AKA or EAP-AKA')
-	response, prob := buildAuthResponse(authInfoRequest, authSubs, mOut, supi, randBytes)
+	response, prob := buildAuthResponse(authInfoRequest, authSubs, mOut, supi, randBytes, sqnBytes)
 	if prob != nil {
 		return nil, prob
 	}
@@ -313,65 +313,84 @@ func deriveAuthenticationKeys(authSubs *models.AuthenticationSubscription) ([]by
 }
 
 func handleSqnAndResync(client *Nudr_DataRepository.APIClient, supi string, subs *models.AuthenticationSubscription, req models.AuthenticationInfoRequest, k, opc []byte) ([]byte, []byte, *models.ProblemDetails) {
+	// Get the base SQN from UDR
 	sqnStr := strictHex(subs.SequenceNumber, 12)
+
 	randBytes := make([]byte, 16)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, nil, util.ProblemDetailsSystemFailure("Random generator failed")
 	}
 
+	// Handle Resync (updates sqnStr and randBytes if necessary)
 	if req.ResynchronizationInfo != nil {
 		var prob *models.ProblemDetails
-		sqnStr, prob = performResync(supi, req.ResynchronizationInfo, k, opc, randBytes)
+		sqnStr, randBytes, prob = performResync(supi, req.ResynchronizationInfo, k, opc)
 		if prob != nil {
 			return nil, nil, prob
 		}
 	}
 
+	// Use the current sqnStr for the crypto calculation (sqnBytes)
+	// but save the INCREMENTED value to the UDR.
+	sqnBytes, err := hex.DecodeString(sqnStr)
+	if err != nil {
+		logger.UeauLog.Errorln("SQN hex decode failed:", err)
+		return nil, nil, util.ProblemDetailsSystemFailure("Internal error: SQN decode failed")
+	}
+
+	// Update UDR with the NEXT sequence number
 	if prob := updateSqnInUdr(client, supi, sqnStr); prob != nil {
 		return nil, nil, prob
 	}
 
-	sqnBytes, err := hex.DecodeString(sqnStr)
-	if err != nil {
-		return nil, nil, util.ProblemDetailsSystemFailure("SQN string is not valid hex")
-	}
 	return sqnBytes, randBytes, nil
 }
 
-func performResync(supi string, resync *models.ResynchronizationInfo, k, opc, newRand []byte) (string, *models.ProblemDetails) {
+func performResync(supi string, resync *models.ResynchronizationInfo, k, opc []byte) (string, []byte, *models.ProblemDetails) {
 	auts, err1 := hex.DecodeString(resync.Auts)
 	oldRand, err2 := hex.DecodeString(resync.Rand)
 	if err1 != nil || err2 != nil {
-		return "", &models.ProblemDetails{
-			Status: http.StatusForbidden,
-			Cause:  authenticationRejected,
-			Detail: "Resync parameters are not valid hex",
-		}
+		return "", nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: authenticationRejected}
 	}
 
+	// Calculate SQNms and MacS from AUTS
 	sqnMs, macS := aucSQN(opc, k, auts, oldRand)
 	if !reflect.DeepEqual(macS, auts[6:]) {
 		logger.UeauLog.Errorln("Re-Sync MAC failed", supi)
-		return "", &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
+		return "", nil, &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
+	}
+
+	// If MAC matches, generate a NEW RAND for the subsequent vector
+	newRand := make([]byte, 16)
+	if _, err := rand.Read(newRand); err != nil {
+		return "", nil, util.ProblemDetailsSystemFailure("Random generator failed during resync")
 	}
 
 	bigSQN := big.NewInt(0).SetBytes(sqnMs)
 	bigInc := big.NewInt(ind + 1)
-	bigSQN.Add(bigSQN, bigInc).Mod(bigSQN, big.NewInt(SqnMAx))
 
-	return strictHex(fmt.Sprintf("%x", bigSQN), 12), nil
+	// This replicates the original math exactly
+	bigSQN = bigSQN.Add(bigSQN, bigInc)
+	bigSQN = bigSQN.Mod(bigSQN, big.NewInt(SqnMAx))
+
+	return strictHex(fmt.Sprintf("%x", bigSQN), 12), newRand, nil
 }
 
 func updateSqnInUdr(client *Nudr_DataRepository.APIClient, supi, currentSqnStr string) *models.ProblemDetails {
-	bigSQN, _ := big.NewInt(0).SetString(currentSqnStr, 16)
-	nextSqnStr := strictHex(fmt.Sprintf("%x", bigSQN.Add(bigSQN, big.NewInt(1))), 12)
+	bigSQN := big.NewInt(0)
+	bigSQN.SetString(currentSqnStr, 16)
+
+	// Increment for the NEXT authentication attempt
+	bigInc := big.NewInt(1)
+	bigSQN = bigSQN.Add(bigSQN, bigInc)
+	nextSqnStr := strictHex(fmt.Sprintf("%x", bigSQN), 12)
 
 	patch := []models.PatchItem{{Op: models.PatchOperation_REPLACE, Path: "/sequenceNumber", Value: nextSqnStr}}
 	rsp, err := client.AuthenticationDataDocumentApi.ModifyAuthentication(context.Background(), supi, patch)
 	if err != nil {
-		return &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected", Detail: err.Error()}
+		return &models.ProblemDetails{Status: http.StatusForbidden, Cause: "modification is rejected"}
 	}
-	rsp.Body.Close()
+	defer rsp.Body.Close()
 	return nil
 }
 
@@ -397,52 +416,64 @@ func runMilenage(k, opc, rand, sqn []byte) (milenageResult, error) {
 	return res, nil
 }
 
-func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.AuthenticationSubscription, m milenageResult, supi string, randBytes []byte) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
-	// FIX: errcheck for AMF and SQN decoding
+func buildAuthResponse(req models.AuthenticationInfoRequest, subs *models.AuthenticationSubscription, m milenageResult, supi string, randBytes []byte, sqnBytes []byte) (*models.AuthenticationInfoResult, *models.ProblemDetails) {
+	// 1. Decode AMF
 	amf, err := hex.DecodeString("8000")
 	if err != nil {
 		return nil, util.ProblemDetailsSystemFailure("Internal error: AMF decode failed")
 	}
 
-	sqnBytes, err := hex.DecodeString(strictHex(subs.SequenceNumber, 12))
-	if err != nil {
-		return nil, util.ProblemDetailsSystemFailure("Internal error: SQN decode failed")
-	}
-
+	// 2. Generate SQN XOR AK
+	// CRITICAL: We use the sqnBytes passed from the Milenage step
 	sqnXorAk := make([]byte, 6)
 	for i := 0; i < 6; i++ {
 		sqnXorAk[i] = sqnBytes[i] ^ m.ak[i]
 	}
+
+	// 3. Construct AUTN: (SQN ^ AK) || AMF || MAC
 	autn := append(append(sqnXorAk, amf...), m.macA...)
 
-	av := &models.AuthenticationVector{Rand: hex.EncodeToString(randBytes), Autn: hex.EncodeToString(autn)}
+	av := &models.AuthenticationVector{
+		Rand: hex.EncodeToString(randBytes),
+		Autn: hex.EncodeToString(autn),
+	}
 	result := &models.AuthenticationInfoResult{Supi: supi, AuthenticationVector: av}
 
 	key := append(m.ck, m.ik...)
 	snName := []byte(req.ServingNetworkName)
 
+	// 4. Derive Vector based on Method
 	if subs.AuthenticationMethod == models.AuthMethod__5_G_AKA {
 		result.AuthType = models.AuthType__5_G_AKA
+
+		// Derive XRES*
 		xresStar, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_RES_STAR_XRES_STAR_DERIVATION, snName, ueauth.KDFLen(snName), randBytes, ueauth.KDFLen(randBytes), m.res, ueauth.KDFLen(m.res))
 		if err != nil {
 			return nil, util.ProblemDetailsSystemFailure(err.Error())
 		}
+
+		// Derive Kausf (uses SQN XOR AK)
 		kausf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_KAUSF_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
 		if err != nil {
 			return nil, util.ProblemDetailsSystemFailure(err.Error())
 		}
+
 		av.XresStar = hex.EncodeToString(xresStar[len(xresStar)/2:])
 		av.Kausf = hex.EncodeToString(kausf)
 	} else {
 		result.AuthType = models.AuthType_EAP_AKA_PRIME
+
+		// Derive CK' and IK' (uses SQN XOR AK)
 		kdf, err := ueauth.GetKDFValue(key, ueauth.FC_FOR_CK_PRIME_IK_PRIME_DERIVATION, snName, ueauth.KDFLen(snName), sqnXorAk, ueauth.KDFLen(sqnXorAk))
 		if err != nil {
 			return nil, util.ProblemDetailsSystemFailure(err.Error())
 		}
+
 		av.Xres = hex.EncodeToString(m.res)
 		av.CkPrime = hex.EncodeToString(kdf[:16])
 		av.IkPrime = hex.EncodeToString(kdf[16:])
 	}
+
 	return result, nil
 }
 
