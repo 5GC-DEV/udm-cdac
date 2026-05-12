@@ -86,6 +86,7 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 }
 
 func SendNFInstancesUDR(id string, types int) string {
+	logger.ConsumerLog.Infof("---Sending NRF discovery for SUPI=%s", id)
 	self := udmContext.UDM_Self()
 	targetNfType := models.NfType_UDR
 	requestNfType := models.NfType_UDM
