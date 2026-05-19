@@ -58,7 +58,7 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 			}
 		}()
 	} else {
-		logger.ConsumerLog.Error("---Response nil from NRF for SearchNFInstances")
+		logger.ConsumerLog.Error("Response nil from NRF for SearchNFInstances")
 	}
 
 	udmSelf := udmContext.UDM_Self()
@@ -86,7 +86,7 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 }
 
 func SendNFInstancesUDR(id string, types int) string {
-	logger.ConsumerLog.Infof("---Sending NRF discovery for SUPI=%s", id)
+	logger.ConsumerLog.Infof("Sending NRF discovery for SUPI=%s", id)
 	self := udmContext.UDM_Self()
 	targetNfType := models.NfType_UDR
 	requestNfType := models.NfType_UDM
