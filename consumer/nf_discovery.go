@@ -51,11 +51,15 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 	if res != nil && res.StatusCode == http.StatusTemporaryRedirect {
 		err = fmt.Errorf("temporary redirect for non NRF consumer")
 	}
-	defer func() {
-		if bodyCloseErr := res.Body.Close(); bodyCloseErr != nil {
-			err = fmt.Errorf("SearchNFInstances' response body cannot close: %w", bodyCloseErr)
-		}
-	}()
+	if res != nil && res.Body != nil {
+		defer func() {
+			if bodyCloseErr := res.Body.Close(); bodyCloseErr != nil {
+				err = fmt.Errorf("SearchNFInstances' response body cannot close: %w", bodyCloseErr)
+			}
+		}()
+	} else {
+		logger.ConsumerLog.Error("Response nil from NRF for SearchNFInstances")
+	}
 
 	udmSelf := udmContext.UDM_Self()
 	var nrfSubData models.NrfSubscriptionData
@@ -82,6 +86,7 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 }
 
 func SendNFInstancesUDR(id string, types int) string {
+	logger.ConsumerLog.Infof("Sending NRF discovery for SUPI=%s", id)
 	self := udmContext.UDM_Self()
 	targetNfType := models.NfType_UDR
 	requestNfType := models.NfType_UDM
