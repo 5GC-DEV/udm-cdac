@@ -1,5 +1,8 @@
+github.com/5GC-DEV/openapi-cdac v1.0.0/go.mod h1:TFxV/NlwA7waEk3BqH6baTQ8oWpPMRDFC1YCEpPjl04=
 github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260608113850-fc77b7ccebaf h1:Tn9+8QDlQlGfz/N6QYDp9QCB1tJ+JcaGhksg/Ue/F30=
 github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260608113850-fc77b7ccebaf/go.mod h1:KLX5UeLe67E9SQC/vVNArCa4KK4luoDNAS0kRGkdE74=
+github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260612063447-2e32180bc630 h1:tw4uM0LP5BquG97Tjw4uXt4/qtN1wc7fiQx7mLvZFTI=
+github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260612063447-2e32180bc630/go.mod h1:KLX5UeLe67E9SQC/vVNArCa4KK4luoDNAS0kRGkdE74=
 github.com/antihax/optional v1.0.0 h1:xK2lYat7ZLaVVcIuj82J8kIro4V6kDe0AUDFboUCwcg=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 h1:DklsrG3dyBCFEj5IhUbnKptjxatkF07cF2ak3yi77so=
