@@ -52,6 +52,7 @@ var SendNfDiscoveryToNrf = func(nrfUri string, targetNfType, requesterNfType mod
 		err = fmt.Errorf("temporary redirect for non NRF consumer")
 	}
 	if res != nil && res.Body != nil {
+		logger.ConsumerLog.Infof("Received response from NRF for SearchNFInstances, status: %d", res.StatusCode)
 		defer func() {
 			if bodyCloseErr := res.Body.Close(); bodyCloseErr != nil {
 				err = fmt.Errorf("SearchNFInstances' response body cannot close: %w", bodyCloseErr)

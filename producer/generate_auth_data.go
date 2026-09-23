@@ -267,6 +267,8 @@ func fetchAuthSubscription(supiOrSuci string) (string, *models.AuthenticationSub
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
 		return "", nil, nil, util.ProblemDetailsSystemFailure(err.Error())
+	} else {
+		logger.UeauLog.Info("created UDMClientToUDR")
 	}
 
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)
