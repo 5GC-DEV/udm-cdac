@@ -13,6 +13,7 @@ import (
 	"github.com/5GC-DEV/openapi-cdac/Nnrf_NFDiscovery"
 	"github.com/5GC-DEV/openapi-cdac/models"
 	nrfCache "github.com/5GC-DEV/openapi-cdac/nrfcache"
+	"github.com/antihax/optional"
 	udmContext "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/util"
@@ -92,6 +93,7 @@ func SendNFInstancesUDR(id string, types int) string {
 	targetNfType := models.NfType_UDR
 	requestNfType := models.NfType_UDM
 	localVarOptionals := &Nnrf_NFDiscovery.SearchNFInstancesParamOpts{
+		Supi: optional.NewString(id),
 		// 	DataSet: optional.NewInterface(models.DataSetId_SUBSCRIPTION),
 	}
 	// switch types {
