@@ -17,9 +17,9 @@ import (
 	"github.com/5GC-DEV/openapi-cdac"
 	"github.com/5GC-DEV/openapi-cdac/Nnrf_NFDiscovery"
 	"github.com/5GC-DEV/openapi-cdac/models"
+	"github.com/5GC-DEV/util-cdac/idgenerator"
+	"github.com/5GC-DEV/util-cdac/util_3gpp/suci"
 	"github.com/omec-project/udm/factory"
-	"github.com/omec-project/util/idgenerator"
-	"github.com/omec-project/util/util_3gpp/suci"
 )
 
 var udmContext UDMContext

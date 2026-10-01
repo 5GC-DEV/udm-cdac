@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/5GC-DEV/openapi-cdac/models"
+	"github.com/5GC-DEV/util-cdac/util_3gpp/suci"
 	"github.com/google/uuid"
 	"github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/factory"
 	"github.com/omec-project/udm/logger"
-	"github.com/omec-project/util/util_3gpp/suci"
 )
 
 // InitUDMContext initializes the UDM context with configuration data.

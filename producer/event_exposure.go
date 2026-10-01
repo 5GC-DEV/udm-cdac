@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/5GC-DEV/openapi-cdac/models"
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
 	udm_context "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
-	"github.com/omec-project/util/httpwrapper"
 )
 
 const (

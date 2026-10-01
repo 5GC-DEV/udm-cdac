@@ -20,15 +20,15 @@ import (
 	"github.com/5GC-DEV/openapi-cdac"
 	"github.com/5GC-DEV/openapi-cdac/Nudr_DataRepository"
 	"github.com/5GC-DEV/openapi-cdac/models"
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
+	"github.com/5GC-DEV/util-cdac/milenage"
+	"github.com/5GC-DEV/util-cdac/ueauth"
+	"github.com/5GC-DEV/util-cdac/util_3gpp/suci"
 	"github.com/antihax/optional"
 	udm_context "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 	stats "github.com/omec-project/udm/metrics"
 	"github.com/omec-project/udm/util"
-	"github.com/omec-project/util/httpwrapper"
-	"github.com/omec-project/util/milenage"
-	"github.com/omec-project/util/ueauth"
-	"github.com/omec-project/util/util_3gpp/suci"
 )
 
 const (
@@ -267,6 +267,8 @@ func fetchAuthSubscription(supiOrSuci string) (string, *models.AuthenticationSub
 	client, err := createUDMClientToUDR(supi)
 	if err != nil {
 		return "", nil, nil, util.ProblemDetailsSystemFailure(err.Error())
+	} else {
+		logger.UeauLog.Info("created UDMClientToUDR for supi: %s", supi)
 	}
 
 	authSubs, res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(context.Background(), supi, nil)

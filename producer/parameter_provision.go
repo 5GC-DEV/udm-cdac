@@ -11,9 +11,9 @@ import (
 
 	"github.com/5GC-DEV/openapi-cdac"
 	"github.com/5GC-DEV/openapi-cdac/models"
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/util"
-	"github.com/omec-project/util/httpwrapper"
 )
 
 func HandleUpdateRequest(request *httpwrapper.Request) *httpwrapper.Response {

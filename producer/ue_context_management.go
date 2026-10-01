@@ -15,6 +15,7 @@ import (
 	"github.com/5GC-DEV/openapi-cdac"
 	"github.com/5GC-DEV/openapi-cdac/Nudr_DataRepository"
 	"github.com/5GC-DEV/openapi-cdac/models"
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
 	"github.com/antihax/optional"
 	"github.com/omec-project/udm/consumer"
 	udmContext "github.com/omec-project/udm/context"
@@ -23,7 +24,6 @@ import (
 	stats "github.com/omec-project/udm/metrics"
 	"github.com/omec-project/udm/producer/callback"
 	"github.com/omec-project/udm/util"
-	"github.com/omec-project/util/httpwrapper"
 )
 
 const (
