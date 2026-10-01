@@ -18,11 +18,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
+	utilLogger "github.com/5GC-DEV/util-cdac/logger"
+	"github.com/5GC-DEV/util-cdac/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/producer"
-	"github.com/omec-project/util/httpwrapper"
-	utilLogger "github.com/omec-project/util/logger"
 )
 
 // Route is the information for every URI.
@@ -43,6 +44,7 @@ type Routes []Route
 // NewRouter returns a new router.
 func NewRouter() *gin.Engine {
 	router := utilLogger.NewGinWithZap(logger.GinLog)
+	router.Use(middleware.IdempotencyMiddleware())
 	AddService(router)
 	return router
 }

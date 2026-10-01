@@ -12,7 +12,7 @@ package factory
 
 import (
 	"github.com/5GC-DEV/openapi-cdac/models"
-	"github.com/omec-project/util/logger"
+	"github.com/5GC-DEV/util-cdac/logger"
 )
 
 const (

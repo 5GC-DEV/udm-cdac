@@ -11,11 +11,11 @@ import (
 
 	"github.com/5GC-DEV/openapi-cdac/models"
 	nrfCache "github.com/5GC-DEV/openapi-cdac/nrfcache"
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
 	"github.com/omec-project/udm/consumer"
 	udmContext "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 	"github.com/omec-project/udm/producer/callback"
-	"github.com/omec-project/util/httpwrapper"
 )
 
 var (

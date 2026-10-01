@@ -3,12 +3,11 @@ module github.com/omec-project/udm
 go 1.24.0
 
 require (
-	github.com/5GC-DEV/openapi-cdac v1.0.1-0.20260701094837-fcfd9c9aecfe
+	github.com/5GC-DEV/openapi-cdac v0.4.3
 	github.com/antihax/optional v1.0.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/omec-project/config5g v1.6.2
-	github.com/omec-project/util v1.3.2
 	github.com/prometheus/client_golang v1.22.0
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v3 v3.3.8
@@ -17,6 +16,7 @@ require (
 )
 
 require (
+	github.com/5GC-DEV/util-cdac v0.4.3 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.13.3 // indirect

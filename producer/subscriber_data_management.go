@@ -14,12 +14,12 @@ import (
 	"github.com/5GC-DEV/openapi-cdac/Nudm_SubscriberDataManagement"
 	Nudr "github.com/5GC-DEV/openapi-cdac/Nudr_DataRepository"
 	"github.com/5GC-DEV/openapi-cdac/models"
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
 	"github.com/antihax/optional"
 	udm_context "github.com/omec-project/udm/context"
 	"github.com/omec-project/udm/logger"
 	stats "github.com/omec-project/udm/metrics"
 	"github.com/omec-project/udm/util"
-	"github.com/omec-project/util/httpwrapper"
 )
 
 const (

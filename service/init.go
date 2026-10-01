@@ -20,6 +20,8 @@ import (
 
 	"github.com/5GC-DEV/openapi-cdac/models"
 	nrfCache "github.com/5GC-DEV/openapi-cdac/nrfcache"
+	"github.com/5GC-DEV/util-cdac/http2_util"
+	utilLogger "github.com/5GC-DEV/util-cdac/logger"
 	grpcClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/udm/consumer"
@@ -35,8 +37,6 @@ import (
 	"github.com/omec-project/udm/ueauthentication"
 	"github.com/omec-project/udm/uecontextmanagement"
 	"github.com/omec-project/udm/util"
-	"github.com/omec-project/util/http2_util"
-	utilLogger "github.com/omec-project/util/logger"
 	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

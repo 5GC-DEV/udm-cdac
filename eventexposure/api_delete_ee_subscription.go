@@ -15,9 +15,9 @@
 package eventexposure
 
 import (
+	"github.com/5GC-DEV/util-cdac/httpwrapper"
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/udm/producer"
-	"github.com/omec-project/util/httpwrapper"
 )
 
 // DeleteEeSubscription - Unsubscribe
